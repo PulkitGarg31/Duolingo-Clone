@@ -1,0 +1,11 @@
+{
+  "courses": [
+    { "slug": "es-en", "title": "Spanish", "learningLanguage": "es", "fromLanguage": "en",
+      "ttsLocale": "es-ES", "flagKey": "es", "isPublished": true,
+      "units": [ "unit-1.json", "unit-2.json", "unit-3.json" ] },
+    { "slug": "fr-en", "title": "French", "learningLanguage": "fr", "fromLanguage": "en",
+      "ttsLocale": "fr-FR", "flagKey": "fr", "isPublished": false, "units": [] },
+    { "slug": "de-en", "title": "German", "learningLanguage": "de", "fromLanguage": "en",
+      "ttsLocale": "de-DE", "flagKey": "de", "isPublished": false, "units": [] }
+  ]
+}
