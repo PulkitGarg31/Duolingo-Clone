@@ -23,7 +23,8 @@ export function Sidebar({ pathname, user, className }: SidebarProps) {
         className,
       )}
     >
-      <div className="pt-8 pb-[30px] pl-4">
+      {/* A flex box, so the block is exactly the wordmark's 30 px plus its padding (no line-box strut). */}
+      <div className="flex pt-8 pb-[30px] pl-4">
         <Wordmark />
       </div>
       <ul className="flex flex-col gap-2">

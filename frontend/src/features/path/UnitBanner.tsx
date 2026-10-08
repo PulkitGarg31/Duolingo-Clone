@@ -43,7 +43,7 @@ export function UnitBanner({ unit, ref }: UnitBannerProps) {
             <p className="mt-3 mb-0.5 text-overline uppercase opacity-70">
               Section {unit.section}, Unit {unit.number}
             </p>
-            <p className="mb-3 text-[19px] leading-[22px] font-extrabold md:text-unit-title">{unit.title}</p>
+            <p className="mb-3 text-[19px] leading-[22px] font-extrabold md:text-[22px] md:leading-7">{unit.title}</p>
           </motion.div>
         </div>
         {unit.hasGuidebook && (

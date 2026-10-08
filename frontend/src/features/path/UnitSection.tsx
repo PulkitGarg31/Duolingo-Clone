@@ -55,10 +55,16 @@ export function UnitSection({ unit, unitIndex, gems, openNodeId, onOpenNodeChang
           };
           return (
             <li key={node.id} className="relative" style={{ left: x, marginTop }}>
+              {/* An open popover hides the bubble, which would otherwise peek out from under it. */}
               {node.kind === "chest" ? (
-                <ChestNode {...shared} showBubble={index === bubbleIndex} onClaim={onClaimChest} />
+                <ChestNode {...shared} showBubble={index === bubbleIndex && openNodeId === null} onClaim={onClaimChest} />
               ) : (
-                <PathNode {...shared} pendingKind={pending?.nodeId === node.id ? pending.kind : null} onAction={onAction} />
+                <PathNode
+                  {...shared}
+                  pendingKind={pending?.nodeId === node.id ? pending.kind : null}
+                  onAction={onAction}
+                  hideBubble={openNodeId !== null}
+                />
               )}
               {decorations.map(
                 (anchor, order) =>

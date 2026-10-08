@@ -9,7 +9,8 @@ interface StartBubbleProps {
 
 /**
  * The bobbing callout above the node to play next. The outer box is centred with a transform the bob keyframes
- * repeat, so it stays centred whether or not the bob runs (it stops under reduced motion).
+ * repeat, so it stays centred whether or not the bob runs (it stops under reduced motion). Its offset, height
+ * and bob make up `BUBBLE_REACH`, the room the path leaves above the node that carries it.
  */
 export function StartBubble({ label, pop = false }: StartBubbleProps) {
   return (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decorAnchors, nodeMarginTop, nodeOffsetX, unitNodeLayout } from "./pathLayout";
+import { BUBBLE_REACH, decorAnchors, nodeMarginTop, nodeOffsetX, unitNodeLayout } from "./pathLayout";
 
 const round = (value: number) => Math.round(value * 10) / 10;
 
@@ -26,9 +26,8 @@ describe("nodeOffsetX", () => {
 });
 
 describe("nodeMarginTop", () => {
-  it("leaves 24 px above a unit's first node, plus room for a START bubble", () => {
+  it("leaves 24 px above a unit's first node", () => {
     expect(nodeMarginTop(0, 0, true, false)).toBe(24);
-    expect(nodeMarginTop(0, 0, true, true)).toBe(67);
   });
 
   it("keeps every node centre 89 px from the previous one", () => {
@@ -37,8 +36,25 @@ describe("nodeMarginTop", () => {
     expect(nodeMarginTop(0, 0, false, false)).toBe(24);
   });
 
-  it("ignores the bubble on later nodes, which floats over the gap", () => {
-    expect(nodeMarginTop(0, 0, false, true)).toBe(24);
+  // The margin is also how far the node above (or the banner) ends over this node's slot, so the bobbing
+  // bubble clears it exactly when the margin exceeds the bubble's reach.
+  it("pushes a node carrying the bubble down until the bobbing bubble clears the node above", () => {
+    for (const [previousX, x] of [
+      [0, 44.884],
+      [44.884, 70],
+      [70, 0],
+      [0, 0],
+    ]) {
+      expect(nodeMarginTop(previousX, x, false, true)).toBeGreaterThan(BUBBLE_REACH);
+    }
+  });
+
+  it("gives a unit's first node the same room for its bubble, below the banner or divider", () => {
+    expect(nodeMarginTop(0, 0, true, true)).toBe(nodeMarginTop(0, 44.884, false, true));
+  });
+
+  it("keeps the room tight: a few px of air over the bubble, not a gap", () => {
+    expect(nodeMarginTop(0, 44.884, false, true)).toBeLessThanOrEqual(BUBBLE_REACH + 8);
   });
 });
 
@@ -53,9 +69,12 @@ describe("unitNodeLayout", () => {
     ]);
   });
 
-  it("makes room above the first node only when it carries the bubble", () => {
-    expect(unitNodeLayout(3, 1, 0)[0].marginTop).toBe(67);
-    expect(unitNodeLayout(3, 1, 1)[0].marginTop).toBe(24);
+  it("makes room above whichever node carries the bubble, and only that one", () => {
+    const margins = (bubbleIndex: number) => unitNodeLayout(4, 1, bubbleIndex).map(({ marginTop }) => round(marginTop));
+    const room = round(nodeMarginTop(0, 0, true, true));
+    expect(margins(0)).toEqual([room, 11.9, 20.4, -10]);
+    expect(margins(1)).toEqual([24, room, 20.4, -10]);
+    expect(margins(2)).toEqual([24, 11.9, room, -10]);
   });
 });
 

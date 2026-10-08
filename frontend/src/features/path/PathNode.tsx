@@ -23,6 +23,8 @@ export interface PathNodeProps {
   onOpenChange: (open: boolean) => void;
   pendingKind: NodeActionKind | null;
   onAction: (node: PathNodeOut, kind: NodeActionKind) => void;
+  /** Hides the START bubble, as while any node popover is open: the bubble would peek out from under it. */
+  hideBubble?: boolean;
 }
 
 const FACE_TONES: Record<NodeState, NodeFaceTone> = {
@@ -41,7 +43,7 @@ const CHOREOGRAPHY_MS = 1_200;
  * on screen (returning from a lesson), the change plays out: the ring fills, the star turns into a check and a
  * crown flies in, or a locked node takes the unit colour, its glyph grows and its START bubble pops up.
  */
-export function PathNode({ node, unitColor, gems, popoverSide, open, onOpenChange, pendingKind, onAction }: PathNodeProps) {
+export function PathNode({ node, unitColor, gems, popoverSide, open, onOpenChange, pendingKind, onAction, hideBubble = false }: PathNodeProps) {
   const change = useValueChange(node.state);
   const { previous, settle } = change;
   const done = node.state === "completed" || node.state === "legendary";
@@ -65,7 +67,7 @@ export function PathNode({ node, unitColor, gems, popoverSide, open, onOpenChang
       {(node.state === "active" || completing) && (
         <NodeRing progress={completing ? 1 : nodeRingProgress(node)} fadeOut={completing} />
       )}
-      {node.state === "active" && !open && <StartBubble label="Start" pop={unlocking} />}
+      {node.state === "active" && !open && !hideBubble && <StartBubble label="Start" pop={unlocking} />}
       {node.state === "legendary" && <LegendarySparkles />}
       <NodePopover
         node={node}

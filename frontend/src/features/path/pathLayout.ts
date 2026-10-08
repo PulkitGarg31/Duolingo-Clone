@@ -14,8 +14,13 @@ const NODE_SPACING = 89;
 export const NODE_SLOT_HEIGHT = 65;
 /** Gap between the unit banner (or divider) and a unit's first node. */
 const FIRST_NODE_GAP = 24;
-/** Extra room above a first node that carries the START bubble. */
-const BUBBLE_ROOM = 43;
+/**
+ * How far a START (or OPEN) bubble reaches above its node's slot: it floats 20 px over the face, clear of the
+ * ring, its box is 44 px tall, and it bobs 6 px higher. Keep in step with `StartBubble`.
+ */
+export const BUBBLE_REACH = 20 + 44 + 6;
+/** Air left between the bubble, at the top of its bob, and the node or banner above it. */
+const BUBBLE_AIR = 6;
 
 /** Horizontal offset of a node from the column's centre line, in px. */
 export function nodeOffsetX(index: number, unitIndex: number, isLast: boolean): number {
@@ -25,10 +30,13 @@ export function nodeOffsetX(index: number, unitIndex: number, isLast: boolean): 
   return AMPLITUDE * (CYCLE[(start + index) % CYCLE.length] - 0.5);
 }
 
-/** Space above a node, in px, given its offset and the previous node's. May be negative on wide steps. */
+/**
+ * Space above a node, in px, given its offset and the previous node's. May be negative on wide steps. The node
+ * carrying the bubble gets the room the bubble needs instead, so the bubble never covers the node above it.
+ */
 export function nodeMarginTop(previousX: number, x: number, isFirst: boolean, hasBubble: boolean): number {
-  if (isFirst) return FIRST_NODE_GAP + (hasBubble ? BUBBLE_ROOM : 0);
-  return Math.sqrt(NODE_SPACING ** 2 - (x - previousX) ** 2) - NODE_SLOT_HEIGHT;
+  const gap = isFirst ? FIRST_NODE_GAP : Math.sqrt(NODE_SPACING ** 2 - (x - previousX) ** 2) - NODE_SLOT_HEIGHT;
+  return hasBubble ? Math.max(gap, BUBBLE_REACH + BUBBLE_AIR) : gap;
 }
 
 export interface NodePlacement {
@@ -36,10 +44,7 @@ export interface NodePlacement {
   marginTop: number;
 }
 
-/**
- * Placement of every node in a unit. `bubbleIndex` is the node showing a bubble (START or OPEN), or null; only
- * a first node needs room for it, since later bubbles float over the gap above their node.
- */
+/** Placement of every node in a unit. `bubbleIndex` is the node showing a bubble (START or OPEN), or null. */
 export function unitNodeLayout(count: number, unitIndex: number, bubbleIndex: number | null): NodePlacement[] {
   const placements: NodePlacement[] = [];
   for (let index = 0; index < count; index++) {

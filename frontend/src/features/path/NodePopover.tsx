@@ -37,7 +37,11 @@ export function NodePopover({ node, unitColor, gems, open, onOpenChange, side, p
         tone={POPOVER_TONE[model.tone]}
         style={surfaceStyle(model.tone, unitColor)}
         aria-label={model.title}
-        className="w-[295px] p-4 md:w-[343px]"
+        className={cn(
+          "w-[295px] p-4 md:w-[343px]",
+          // Springs open from 90 % out of its arrow, on top of the panel's fade.
+          "origin-(--radix-popover-content-transform-origin) scale-100 transition-[scale] duration-150 ease-(--ease-spring) starting:scale-90",
+        )}
       >
         <NodePopoverBody model={model} pendingKind={pendingKind} onAction={onAction} />
       </PopoverContent>

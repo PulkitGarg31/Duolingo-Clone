@@ -25,8 +25,10 @@ export interface ChestNodeProps {
   onClaim: (node: PathNodeOut) => void;
 }
 
-const CHEST_SIZE = 72;
-const CHEST_BOX = "absolute bottom-0 left-1/2 -translate-x-1/2";
+/** The chest art fills about 24 × 23 of its 32-unit artboard, so at 88 px it is node-sized (66 × 64). */
+const CHEST_SIZE = 88;
+/** The artboard's empty bottom margin (4 of 32 units) hangs below the slot, so the chest stands where a node's lip ends. */
+const CHEST_BOX = "absolute -bottom-[11px] left-1/2 -translate-x-1/2";
 const CHEST_BUTTON =
   "cursor-pointer rounded-md [-webkit-tap-highlight-color:transparent] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
 

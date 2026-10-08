@@ -1,4 +1,5 @@
-import { ButtonLink, ProgressBar } from "@/components/ui";
+import { ButtonLink } from "@/components/ui";
+import { QuestBar } from "@/features/rail/QuestBar";
 import type { DailyGoalOut } from "@/lib/api/types";
 import { formatTotal } from "@/lib/format";
 
@@ -14,7 +15,7 @@ export function XpPopover({ totalXp, dailyGoal, onClose }: XpPopoverProps) {
   return (
     <div className="flex flex-col gap-4">
       <h2 className="text-heading text-fg">Daily goal</h2>
-      <ProgressBar value={earnedXp / goalXp} tone="quest" height={18} label={`${earnedXp} / ${goalXp} XP`} aria-label="Daily goal" />
+      <QuestBar progress={earnedXp} target={goalXp} unit="XP" aria-label="Daily goal" />
       <p className="text-body text-fg-2">
         {met ? "Daily goal complete! Nice work!" : `Earn ${goalXp - earnedXp} more XP to reach your daily goal`}
       </p>

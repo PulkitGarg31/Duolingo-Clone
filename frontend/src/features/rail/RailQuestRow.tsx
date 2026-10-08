@@ -2,10 +2,10 @@
 
 import { motion } from "motion/react";
 import { ChestIcon } from "@/components/icons";
-import { ProgressBar } from "@/components/ui";
 import { useValueChange } from "@/features/shell/useValueChange";
 import type { QuestOut } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
+import { QuestBar } from "./QuestBar";
 import { QuestGlyph } from "./QuestGlyph";
 
 /**
@@ -21,13 +21,7 @@ export function RailQuestRow({ quest }: { quest: QuestOut }) {
       <div className="min-w-0">
         <p className="mb-2 text-[17px] leading-5 font-extrabold text-fg">{quest.title}</p>
         <div className="relative mr-3">
-          <ProgressBar
-            value={quest.progress / quest.target}
-            tone="quest"
-            height={18}
-            label={`${quest.progress} / ${quest.target}`}
-            aria-label={quest.title}
-          />
+          <QuestBar progress={quest.progress} target={quest.target} aria-label={quest.title} />
           <motion.span
             key={completion.count}
             aria-hidden="true"

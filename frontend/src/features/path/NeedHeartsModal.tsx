@@ -42,7 +42,17 @@ export function NeedHeartsModal({ open, onOpenChange, hearts, gems, onRefill, on
           icon={<UnlimitedHeartIcon size={48} />}
           title="Unlimited Hearts"
           body="Never run out of hearts with Super!"
-          trailing={<ComingSoonPill />}
+          trailing={
+            // The short pill leaves the title room on one line in a phone's sheet.
+            <span>
+              <span className="sm:hidden">
+                <ComingSoonPill short />
+              </span>
+              <span className="hidden sm:inline">
+                <ComingSoonPill />
+              </span>
+            </span>
+          }
           muted
           onClick={onUnlimited}
         />
