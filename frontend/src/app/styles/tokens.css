@@ -1,0 +1,108 @@
+/* app/styles/tokens.css. Import it before the Tailwind theme block. */
+:root {
+  color-scheme: light;
+
+  /* ---------- raw palette (Duolingo token names) ---------- */
+  --duo-snow:#FFFFFF; --duo-polar:#F7F7F7; --duo-swan:#E5E5E5; --duo-koala:#D7D7D7;
+  --duo-hare:#AFAFAF; --duo-wolf:#777777; --duo-eel:#4B4B4B; --duo-black-text:#3C3C3C;
+  --duo-owl:#58CC02; --duo-tree-frog:#58A700; --duo-mask-green:#89E219; --duo-turtle:#A5ED6E; --duo-sea-sponge:#D7FFB8;
+  --duo-macaw:#1CB0F6; --duo-whale:#1899D6; --duo-blue-jay:#84D8FF; --duo-iguana:#DDF4FF;
+  --duo-humpback:#2B70C9; --duo-narwhal:#1453A3;
+  --duo-cardinal:#FF4B4B; --duo-fire-ant:#EA2B2B; --duo-flamingo:#FFB2B2; --duo-pig:#F5A4A4; --duo-walking-fish:#FFDFE0;
+  --duo-bee:#FFC800; --duo-lion:#FFB100; --duo-camel:#E7A601; --duo-guinea-pig:#CD7900; --duo-cowbird:#AE6802;
+  --duo-canary:#FFF5D3; --duo-fox:#FF9600; --duo-fox-shadow:#CD7900; --duo-cheetah:#FFCE8E;
+  --duo-beetle:#CE82FF; --duo-beetle-lip:#A568CC; --duo-betta:#9069CD; --duo-butterfly:#6F4EA1;
+  --duo-peacock:#00CD9C; --duo-starfish:#FF86D0; --duo-dragon:#CC348D; --duo-grizzly-lite:#DC8F47;
+  --duo-cosmos:#3C4DFF; --duo-nebula:#3F22EC; --duo-eclipse:#000437;
+  --duo-gold:#FAA919; --duo-gold-shine:#FFE700; --duo-diamond:#38D0D0; --duo-starlight:#268AFF;
+
+  /* ---------- unit colours (never flip) ---------- */
+  --unit-green:#58CC02;   --unit-green-lip:#46A302;   --unit-green-shine:#72D627;   --unit-green-dark:#58A700;
+  --unit-purple:#CE82FF;  --unit-purple-lip:#A568CC;  --unit-purple-shine:#D696FF;  --unit-purple-dark:#A568CC;
+  --unit-teal:#00CD9C;    --unit-teal-lip:#00A47D;    --unit-teal-shine:#3FD9B5;    --unit-teal-dark:#00A47D;
+  --unit-blue:#1CB0F6;    --unit-blue-lip:#168DC5;    --unit-blue-shine:#43BEF8;    --unit-blue-dark:#1899D6;
+  --unit-pink:#FF86D0;    --unit-pink-lip:#CC6BA6;    --unit-pink-shine:#FF9ED9;    --unit-pink-dark:#CC6BA6;
+  --unit-orange:#FF9600;  --unit-orange-lip:#CC7800;  --unit-orange-shine:#FFA82C;  --unit-orange-dark:#CD7900;
+  --unit-red:#FF4B4B;     --unit-red-lip:#CC3C3C;     --unit-red-shine:#FF6969;     --unit-red-dark:#EA2B2B;
+  --unit-magenta:#CC348D; --unit-magenta-lip:#A32A71; --unit-magenta-shine:#D65AA2; --unit-magenta-dark:#A32A71;
+  --unit-brown:#DC8F47;   --unit-brown-lip:#B07239;   --unit-brown-shine:#E3A56C;   --unit-brown-dark:#965A3A;
+  --unit-gold:#FFC800;    --unit-gold-lip:#E6A000;    --unit-gold-shine:#FFE700;    --unit-gold-dark:#CD7900;
+
+  /* ---------- semantic tokens ---------- */
+  --c-bg:var(--duo-snow); --c-bg-subtle:var(--duo-polar); --c-bg-selected:var(--duo-iguana);
+  --c-bg-inverse:var(--duo-eel); --c-scrim:rgb(0 0 0 / .3);
+  --c-line:var(--duo-swan); --c-line-selected:var(--duo-blue-jay);
+  --c-fg:var(--duo-eel); --c-fg-strong:var(--duo-black-text); --c-fg-2:var(--duo-wolf); --c-fg-3:var(--duo-hare);
+  --c-fg-faint:var(--duo-swan); --c-fg-link:var(--duo-macaw); --c-fg-selected:var(--duo-whale);
+  --c-fg-on-color:var(--duo-snow); --c-fg-on-color-fixed:#FFFFFF;
+
+  --c-primary:var(--duo-owl); --c-primary-lip:var(--duo-tree-frog);
+  --c-secondary:var(--duo-macaw); --c-secondary-lip:var(--duo-whale);
+  --c-danger:var(--duo-cardinal); --c-danger-lip:var(--duo-fire-ant);
+  --c-gold:var(--duo-bee); --c-gold-lip:var(--duo-camel); --c-gold-fg:var(--duo-cowbird);
+  --c-super:var(--duo-cosmos); --c-super-lip:var(--duo-nebula);
+  --c-disabled:var(--duo-swan); --c-disabled-fg:var(--duo-hare);
+
+  --c-correct-bg:var(--duo-sea-sponge); --c-correct-line:var(--duo-turtle); --c-correct-fg:var(--duo-tree-frog);
+  --c-wrong-bg:var(--duo-walking-fish); --c-wrong-line:var(--duo-flamingo); --c-wrong-fg:var(--duo-fire-ant);
+  --c-skip-bg:var(--duo-canary); --c-skip-fg:var(--duo-guinea-pig); --c-badge-bg:var(--duo-snow);
+
+  --c-streak:var(--duo-fox); --c-streak-off:var(--duo-hare);
+  --c-xp:var(--duo-bee); --c-xp-fg:var(--duo-camel);
+  --c-gem:var(--duo-macaw); --c-heart:var(--duo-cardinal);
+
+  --c-track:var(--duo-swan); --c-fill:var(--duo-owl); --c-fill-hot:var(--duo-bee); --c-fill-fire:var(--duo-fox);
+  --c-gloss:rgb(255 255 255 / .2); --c-quest-fill:var(--duo-bee); --c-quest-fg:rgb(0 0 0 / .4);
+
+  --c-node-locked:var(--duo-swan); --c-node-locked-lip:#B7B7B7; --c-node-locked-glyph:var(--duo-hare);
+
+  --c-lb-me:var(--duo-swan);
+  --c-lb-up-bg:var(--duo-sea-sponge); --c-lb-up-fg:var(--duo-tree-frog);
+  --c-lb-down-bg:var(--duo-walking-fish); --c-lb-down-fg:var(--duo-fire-ant);
+
+  --c-streak-band:#FFEDD5; --c-freeze:var(--duo-macaw);
+  --c-streak-panel-off-bg:#FFF5D3; --c-streak-panel-off-fg:#EBC37F;
+  --c-streak-panel-on-bg:#FF9600; --c-streak-panel-frozen-bg:#DDF4FF;
+
+  --c-focus:var(--duo-macaw); --c-skeleton:var(--duo-swan); --c-skeleton-shine:var(--duo-polar);
+
+  /* ---------- shape, depth, layout, layers, motion ---------- */
+  --radius-sm:8px; --radius-bubble-sm:10px; --radius:12px; --radius-banner:13px; --radius-bubble:14px;
+  --radius-popover:15px; --radius-lg:16px; --radius-xl:20px; --radius-full:9999px;
+  --bw:2px; --lip-btn:4px; --lip-outline:2px; --lip-node:8px; --lip-pill:2px;
+  --shadow-sheet:0 -4px 12px rgb(0 0 0 / .15);
+  --sidebar-w:256px; --rail-w:88px; --aside-w:368px; --col-max:600px; --col-narrow:592px;
+  --topbar-h:58px; --tabbar-h:82px; --lesson-footer-h:140px; --lesson-footer-max:1000px;
+  --z-node:1; --z-start:2; --z-sticky:100; --z-popover:150; --z-topbar:210; --z-footer:220;
+  --z-overlay:300; --z-modal:313; --z-toast:400; --z-confetti:450; --z-dev:500;
+  --dur-press:100ms; --dur-fast:150ms; --dur-hover:200ms; --dur-feedback:200ms; --dur-base:300ms;
+  --dur-progress:400ms; --dur-heart:500ms; --dur-grow:600ms; --dur-match:800ms; --dur-count:800ms;
+  --ease-standard:cubic-bezier(.4,0,.2,1); --ease-out:cubic-bezier(0,0,.2,1); --ease-in:cubic-bezier(.4,0,1,1);
+  --ease-overshoot:cubic-bezier(.35,1.8,.35,.83); --ease-spring:cubic-bezier(.34,1.56,.64,1);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  /* raw palette: only the tokens Duolingo flips */
+  --duo-snow:#131F24; --duo-polar:#202F36; --duo-swan:#37464F; --duo-koala:#485A62;
+  --duo-hare:#52656D; --duo-wolf:#DCE6EC; --duo-eel:#F1F7FB; --duo-black-text:#F1F7FB;
+  --duo-owl:#93D333; --duo-tree-frog:#79B933; --duo-mask-green:#90DC48; --duo-turtle:#5F8428; --duo-sea-sponge:#202F36;
+  --duo-macaw:#49C0F8; --duo-blue-jay:#3F85A7; --duo-iguana:#202F36;
+  --duo-cardinal:#EE5555; --duo-fire-ant:#D84848; --duo-flamingo:#945151; --duo-walking-fish:#202F36;
+  --duo-bee:#FFC700; --duo-guinea-pig:#D79433; --duo-canary:#202F36; --duo-fox:#FFAB33; --duo-cheetah:#202F36;
+  /* semantic overrides that are not plain flips */
+  --c-scrim:rgb(0 0 0 / .5);
+  --c-xp-fg:var(--duo-bee);
+  --c-quest-fg:rgb(0 0 0 / .6);
+  --c-node-locked-lip:#2C383F;
+  --c-lb-me:var(--duo-polar); --c-lb-up-bg:var(--duo-polar); --c-lb-down-bg:var(--duo-polar);
+  --c-streak-band:#4E3D1B;
+  --c-streak-panel-off-bg:#202F36; --c-streak-panel-off-fg:#52656D;
+  --c-streak-panel-on-bg:#CD7900; --c-streak-panel-frozen-bg:#2B70C9;
+  --c-skeleton-shine:var(--duo-koala);
+  --shadow-sheet:0 -4px 12px rgb(0 0 0 / .45);
+}
+
+html { font-family: var(--font-sans); background: var(--c-bg); color: var(--c-fg);
+       -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+button, input, textarea, select { font: inherit; }

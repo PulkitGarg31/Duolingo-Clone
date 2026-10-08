@@ -1,0 +1,159 @@
+@import "tailwindcss";
+@import "./styles/tokens.css";
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+@theme inline {
+  --font-sans: var(--font-nunito), "Nunito", ui-rounded, "Arial Rounded MT Bold", system-ui, sans-serif;
+
+  /* breakpoints: Duolingo's, renamed */
+  --breakpoint-*: initial;
+  --breakpoint-xs: 22.5rem;    /* 360  small phones */
+  --breakpoint-sm: 33.125rem;  /* 530  large phones */
+  --breakpoint-md: 43.75rem;   /* 700  Duolingo mobile/desktop switch: lesson layout, type sizes */
+  --breakpoint-lg: 48rem;      /* 768  shell: icon rail replaces the bottom tab bar */
+  --breakpoint-xl: 68.75rem;   /* 1100 right rail appears, GUIDEBOOK label */
+  --breakpoint-2xl: 72.5rem;   /* 1160 full 256 px sidebar with labels */
+
+  /* semantic colours → utilities: bg-page, text-fg-2, border-line, ... */
+  --color-page: var(--c-bg);          --color-subtle: var(--c-bg-subtle);   --color-selected: var(--c-bg-selected);
+  --color-inverse: var(--c-bg-inverse);
+  --color-line: var(--c-line);        --color-line-selected: var(--c-line-selected);
+  --color-fg: var(--c-fg);            --color-fg-strong: var(--c-fg-strong);
+  --color-fg-2: var(--c-fg-2);        --color-fg-3: var(--c-fg-3);          --color-fg-faint: var(--c-fg-faint);
+  --color-link: var(--c-fg-link);     --color-fg-selected: var(--c-fg-selected);
+  --color-on-color: var(--c-fg-on-color); --color-on-color-fixed: var(--c-fg-on-color-fixed);
+  --color-primary: var(--c-primary);  --color-primary-lip: var(--c-primary-lip);
+  --color-secondary: var(--c-secondary); --color-secondary-lip: var(--c-secondary-lip);
+  --color-danger: var(--c-danger);    --color-danger-lip: var(--c-danger-lip);
+  --color-gold: var(--c-gold);        --color-gold-lip: var(--c-gold-lip); --color-gold-fg: var(--c-gold-fg);
+  --color-super: var(--c-super);      --color-super-lip: var(--c-super-lip);
+  --color-disabled: var(--c-disabled); --color-disabled-fg: var(--c-disabled-fg);
+  --color-correct: var(--c-correct-bg); --color-correct-line: var(--c-correct-line); --color-correct-fg: var(--c-correct-fg);
+  --color-wrong: var(--c-wrong-bg);   --color-wrong-line: var(--c-wrong-line); --color-wrong-fg: var(--c-wrong-fg);
+  --color-skip: var(--c-skip-bg);     --color-skip-fg: var(--c-skip-fg);    --color-badge: var(--c-badge-bg);
+  --color-streak: var(--c-streak);    --color-streak-off: var(--c-streak-off);
+  --color-xp: var(--c-xp);            --color-xp-fg: var(--c-xp-fg);
+  --color-gem: var(--c-gem);          --color-heart: var(--c-heart);
+  --color-track: var(--c-track);      --color-fill: var(--c-fill); --color-fill-hot: var(--c-fill-hot); --color-fill-fire: var(--c-fill-fire);
+  --color-quest: var(--c-quest-fill); --color-freeze: var(--c-freeze); --color-focus: var(--c-focus);
+  --color-skeleton: var(--c-skeleton);
+  /* raw palette, for illustrations and one-offs: bg-owl, text-fox, ... */
+  --color-owl: var(--duo-owl); --color-macaw: var(--duo-macaw); --color-cardinal: var(--duo-cardinal);
+  --color-bee: var(--duo-bee); --color-fox: var(--duo-fox); --color-beetle: var(--duo-beetle);
+  --color-eel: var(--duo-eel); --color-wolf: var(--duo-wolf); --color-hare: var(--duo-hare);
+  --color-swan: var(--duo-swan); --color-polar: var(--duo-polar); --color-snow: var(--duo-snow);
+
+  /* radii: rounded-sm (8), rounded-md (12), rounded-lg (16), rounded-full */
+  --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px; --radius-xl: 20px;
+
+  /* type roles → text-label, text-title, ... (size + line-height + weight + tracking) */
+  --text-display: 7.5rem;   --text-display--line-height: 1;      --text-display--font-weight: 900;
+  --text-hero: 2rem;        --text-hero--line-height: 2.5rem;    --text-hero--font-weight: 800;
+  --text-title-xl: 2rem;    --text-title-xl--line-height: 1.25;  --text-title-xl--font-weight: 800;
+  --text-title-lg: 1.75rem; --text-title-lg--line-height: 2.125rem; --text-title-lg--font-weight: 800;
+  --text-title: 1.5625rem;  --text-title--line-height: 2.125rem; --text-title--font-weight: 800;
+  --text-heading: 1.5rem;   --text-heading--line-height: 2rem;   --text-heading--font-weight: 800;
+  --text-unit-title: 1.375rem; --text-unit-title--line-height: 1.75rem; --text-unit-title--font-weight: 800;
+  --text-card-title: 1.1875rem; --text-card-title--line-height: 1.5rem; --text-card-title--font-weight: 800;
+  --text-subtitle: 1.1875rem; --text-subtitle--line-height: 1.6875rem; --text-subtitle--font-weight: 600;
+  --text-exercise: 1.1875rem; --text-exercise--line-height: 1.15; --text-exercise--font-weight: 600;
+  --text-body: 1.0625rem;   --text-body--line-height: 1.5625rem; --text-body--font-weight: 600;
+  --text-small: 0.9375rem;  --text-small--line-height: 1.375rem; --text-small--font-weight: 600;
+  --text-label-lg: 1.0625rem; --text-label-lg--line-height: 1.25rem; --text-label-lg--font-weight: 800; --text-label-lg--letter-spacing: 0.05em;
+  --text-label: 0.9375rem;  --text-label--line-height: 1.125rem; --text-label--font-weight: 800; --text-label--letter-spacing: 0.05em;
+  --text-overline: 1rem;    --text-overline--line-height: 1.5rem; --text-overline--font-weight: 800; --text-overline--letter-spacing: 0.05em;
+  --text-caption: 0.8125rem; --text-caption--line-height: 1rem;  --text-caption--font-weight: 800; --text-caption--letter-spacing: 0.04em;
+  --text-stat: 1.0625rem;   --text-stat--line-height: 1.25rem;   --text-stat--font-weight: 800;
+
+  /* motion: animate-start-bob, animate-pop-in, ... (keyframes below) */
+  --ease-overshoot: cubic-bezier(.35,1.8,.35,.83);
+  --ease-spring: cubic-bezier(.34,1.56,.64,1);
+  --animate-start-bob: start-bob 1.6s ease-in-out infinite;
+  --animate-pop-in: pop-in 300ms var(--ease-spring) both;
+  --animate-grow-in: grow-in 600ms ease-in-out both;
+  --animate-sheet-up: sheet-up 200ms cubic-bezier(.35,1.8,.35,.83) both;
+  --animate-heart-drop: heart-drop 500ms ease-in forwards;
+  --animate-last-heart: last-heart 1.5s ease-in-out .5s infinite;
+  --animate-flame: flame-flicker 1.2s ease-in-out infinite;
+  --animate-shimmer: shimmer 1.2s linear infinite;
+}
+
+/* ---------- motion: press recipe, keyframes and reduced motion (durations noted inline) ---------- */
+
+/* 1. 3D press: buttons, tiles, nodes (100 ms linear). Set --lip to the element's lip height. */
+.pressable { transition: transform 100ms linear, box-shadow 100ms linear, filter 200ms; }
+.pressable:active { transform: translateY(var(--lip)); box-shadow: none; }
+
+/* 2. Feedback: mobile sheet (200 ms, Duolingo overshoot); desktop content and badge */
+@keyframes sheet-up    { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes feedback-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }      /* 200 ms ease-out */
+@keyframes badge-pop   { 0% { transform: scale(.6); } 70% { transform: scale(1.1); } 100% { transform: scale(1); } } /* 300 ms spring */
+
+/* 3. Tile movement: FLIP. JS measures first and last; CSS animates the inverse */
+.token-flying { transition: transform 200ms cubic-bezier(0,0,.2,1); will-change: transform; position: relative; z-index: 2; }
+
+/* 4. Hearts */
+@keyframes heart-drop   { to { opacity: 0; transform: translateY(50px); } }                                          /* 500 ms ease-in, ghost copy */
+@keyframes heart-squash { 0%,100% { transform: scale(1); } 30% { transform: scale(.8); } 70% { transform: scale(1.1); } } /* 300 ms */
+@keyframes last-heart   { 0%,100% { transform: scale(1); } 50% { transform: scale(1.4); } }                           /* 1.5 s, .5 s delay, infinite */
+
+/* 5. Progress bars */
+.progress-fill { transition: width 400ms ease, background-color 300ms ease; }
+@keyframes shine-sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }  /* 600 ms at 6 and 11 in a row */
+
+/* 6. Path: START bob, node grow and shrink, pops */
+@keyframes start-bob  { 0%,100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, -6px); } } /* 1.6 s ease-in-out infinite */
+@keyframes grow-in    { 0% { transform: scale(.01); } 67% { transform: scale(1.1); } 100% { transform: scale(1); } } /* 300–600 ms */
+@keyframes shrink-out { from { transform: scale(1); } to { transform: scale(.01); } }                                 /* 300 ms ease-in */
+@keyframes pop-in     { 0% { opacity: 0; transform: scale(.6); } 70% { opacity: 1; transform: scale(1.08); } 100% { transform: scale(1); } }
+@keyframes chest-wiggle { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } } /* 300 ms, every 3 s */
+
+/* 7. Flame (transform-origin: 50% 100%) */
+@keyframes flame-flicker { 0%,100% { transform: scale(1,1) skewX(0); } 25% { transform: scale(1.02,1.06) skewX(-2deg); }
+                           50% { transform: scale(.99,.97) skewX(1deg); } 75% { transform: scale(1.01,1.04) skewX(2deg); } } /* 1.2 s infinite */
+@keyframes flame-ignite  { 0% { transform: scale(.6); filter: grayscale(1); } 60% { transform: scale(1.15); filter: grayscale(0); } 100% { transform: scale(1); } } /* 600 ms spring */
+
+/* 8. Number roll for stat changes (300 ms); count-ups run in JS */
+@keyframes roll-out { to { transform: translateY(-100%); opacity: 0; } }
+@keyframes roll-in  { from { transform: translateY(100%); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* 9. Lesson-complete stat cards */
+@keyframes stat-rise  { 0%,50% { background-color: var(--c-bg); transform: translateY(30px); } 100% { transform: translateY(0); } } /* 200 ms ease-in-out, stagger 150 ms */
+@keyframes stat-inner { 0% { opacity: 0; transform: scale(0); } 50%,100% { opacity: 1; transform: scale(1); } }                      /* 100 ms */
+
+/* 10. Week strip */
+@keyframes day-pop { 0% { transform: scale(0); } 70% { transform: scale(1.15); } 100% { transform: scale(1); } } /* 400 ms */
+@keyframes nudge   { 0%,100% { transform: scale(1); } 50% { transform: scale(.7); } }                           /* 600 ms ease-in-out */
+
+/* 11. Match pairs */
+@keyframes match-correct { 0%,100% { background: var(--c-correct-bg); border-color: var(--c-correct-line); color: var(--c-correct-fg); } } /* 300 ms */
+@keyframes match-fade    { 0%,62% { background: var(--c-correct-bg); border-color: var(--c-correct-line); color: var(--c-correct-fg); }
+                           100%   { background: var(--c-bg); border-color: var(--c-line); color: var(--c-fg-faint); } }               /* 800 ms */
+@keyframes match-wrong   { 0%,62% { background: var(--c-wrong-bg); border-color: var(--c-wrong-line); color: var(--c-wrong-fg); }
+                           100%   { background: var(--c-bg); border-color: var(--c-line); color: var(--c-fg); } }                     /* 800 ms */
+
+/* 12. Overlays */
+@keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }                                     /* 300 ms */
+@keyframes modal-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } } /* 250 ms spring */
+@keyframes toast-in { from { opacity: 0; transform: translateY(-16px); } to { opacity: 1; transform: none; } } /* 300 ms spring */
+@keyframes rays     { to { transform: rotate(360deg); } }                                           /* 8 s linear infinite */
+
+/* 13. Mascot */
+@keyframes owl-bob   { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }  /* 2 s ease-in-out infinite */
+@keyframes owl-blink { 0%,96%,100% { transform: scaleY(1); } 98% { transform: scaleY(.1); } }        /* 5 s infinite, on the eyes group */
+@keyframes owl-jump  { 0% { transform: translateY(0); } 40% { transform: translateY(-24px); } 80% { transform: translateY(0) scaleY(.92); } 100% { transform: none; } } /* 600 ms × 2 */
+
+/* 14. Skeletons */
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }    /* 1.2 s linear infinite */
+
+/* Reduced motion. The pre-paint script sets html[data-motion="reduced" | "full"]: "reduced" when the OS asks
+   (prefers-reduced-motion) or Settings → Animations is off. The media query below is only the no-JS fallback.
+   JS-driven effects (confetti, count-ups, FLIP) read the same attribute. */
+html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-motion="reduced"] *::after {
+  animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 100ms !important; scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion]) *, html:not([data-motion]) *::before, html:not([data-motion]) *::after {
+    animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 100ms !important;
+  }
+}
