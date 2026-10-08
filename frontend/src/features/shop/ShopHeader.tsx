@@ -6,7 +6,7 @@ import { formatTotal } from "@/lib/format";
 export function ShopHeader({ gems }: { gems: number }) {
   return (
     <header className="flex items-center justify-between gap-4">
-      <h1 className="text-[24px] leading-[30px] font-extrabold text-fg-strong md:text-title-lg">Shop</h1>
+      <h1 className="text-[24px]/[30px] font-extrabold text-fg-strong md:text-title-lg">Shop</h1>
       <p className="flex items-center gap-2 text-stat text-gem">
         <GemIcon size={28} variant={gems > 0 ? "active" : "inactive"} />
         <CountUp value={gems} from={gems} format={formatTotal} />

@@ -16,7 +16,7 @@ export function LeagueHeader({ league, onWeekEnd }: LeagueHeaderProps) {
   return (
     <header className="sticky top-(--topbar-h) z-(--z-sticky) border-b-2 border-line bg-page px-4 pt-6 text-center lg:top-16 xl:top-0">
       <BadgeCarousel tiers={league.tiers} currentTier={league.league.tier} />
-      <h1 className="mt-6 mb-2 text-[22px] leading-[30px] font-extrabold text-fg-strong md:text-title">
+      <h1 className="mt-6 mb-2 text-[22px]/[30px] font-extrabold text-fg-strong md:text-title">
         {league.league.name} League
       </h1>
       <p className="px-3 text-body text-fg-2 md:text-subtitle">{promotionSubtitle(league.promoteCount)}</p>

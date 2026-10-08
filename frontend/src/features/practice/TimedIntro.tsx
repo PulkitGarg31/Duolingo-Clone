@@ -87,7 +87,7 @@ export function TimedIntro({ open, starting, onStart, onClose }: TimedIntroProps
                 <Bubbles />
                 <div className="relative flex flex-1 flex-col items-center justify-center">
                   <Owl pose="stopwatch" size={160} />
-                  <Dialog.Title className="mt-8 text-[25px] leading-[31px] font-extrabold md:text-title-xl">
+                  <Dialog.Title className="mt-8 text-[25px]/[31px] font-extrabold md:text-title-xl">
                     Timed practice
                   </Dialog.Title>
                   <Dialog.Description className="mt-3 max-w-[480px] text-body text-on-color-fixed/85 md:text-subtitle">

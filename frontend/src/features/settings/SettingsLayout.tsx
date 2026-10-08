@@ -7,7 +7,7 @@ import { cn } from "@/lib/cn";
  * rows for options that are not built yet.
  */
 
-const LABEL = "text-body font-extrabold text-fg-strong";
+const LABEL = "text-body font-extrabold text-fg";
 
 interface SettingsSectionProps {
   title: string;

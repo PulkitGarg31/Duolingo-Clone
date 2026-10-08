@@ -1,10 +1,8 @@
-import { LegendaryTrophyIcon } from "@/components/icons/LegendaryTrophyIcon";
 import { Owl } from "@/components/mascot/Owl";
 import type { DailyGoalOut, QuestsOut } from "@/lib/api/types";
 import { ComingSoonQuestCard } from "./ComingSoonQuestCard";
-import { DailyGoalHero } from "./DailyGoalHero";
 import { DailyQuestsSection } from "./DailyQuestsSection";
-import { monthName } from "./questCopy";
+import { MonthlyQuestHero } from "./MonthlyQuestHero";
 
 export interface QuestsViewProps {
   quests: QuestsOut;
@@ -25,20 +23,14 @@ function HighFivingOwls() {
   );
 }
 
-/** The quests page: the daily goal first, today's quests, then the quest types that are still to come. */
+/** The quests page: this month's quest, today's quests, then team quests, which are still to come. */
 export function QuestsView({ quests, dailyGoal, onReset }: QuestsViewProps) {
   return (
     <div className="mx-auto w-full max-w-[592px] px-4 pt-4 pb-12 lg:px-0 lg:pt-6">
       <h1 className="sr-only">Quests</h1>
-      <DailyGoalHero dailyGoal={dailyGoal} />
+      <MonthlyQuestHero localDate={quests.localDate} resetsAt={quests.resetsAt} goalMet={dailyGoal.met} />
       <DailyQuestsSection quests={quests} onReset={onReset} />
-      <div className="mt-10 grid grid-cols-1 gap-4">
-        <ComingSoonQuestCard
-          art={<LegendaryTrophyIcon size={56} className="grayscale" />}
-          title={`${monthName(quests.localDate)} Quest`}
-          body="Monthly challenges unlock soon!"
-          feature="monthly challenges"
-        />
+      <div className="mt-10">
         <ComingSoonQuestCard
           art={<HighFivingOwls />}
           title="Friends Quest"

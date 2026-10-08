@@ -17,7 +17,7 @@ export function DailyQuestsSection({ quests, onReset }: DailyQuestsSectionProps)
   return (
     <section className="mt-10">
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-[22px] leading-7 font-extrabold text-fg-strong md:text-heading">Daily Quests</h2>
+        <h2 className="text-[22px]/7 font-extrabold text-fg-strong md:text-heading">Daily Quests</h2>
         <ResetCountdown resetsAt={quests.resetsAt} onReset={onReset} />
       </div>
       <p className="mt-1 text-body text-fg-2 md:text-subtitle">Complete quests to earn rewards! Quests refresh every day.</p>

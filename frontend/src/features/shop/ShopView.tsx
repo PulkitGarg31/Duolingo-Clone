@@ -20,7 +20,7 @@ export function ShopView({ shop, busyCode, onBuy, onBoostEnd }: ShopViewProps) {
       <ShopHeader gems={shop.gems} />
       {groupBySection(shop.items).map(({ section, title, items }) => (
         <section key={section} className="mt-8">
-          <h2 className="mb-2 text-[22px] leading-7 font-extrabold text-fg-strong md:text-heading">{title}</h2>
+          <h2 className="mb-2 text-[22px]/7 font-extrabold text-fg-strong md:text-heading">{title}</h2>
           <ul>
             {items.map((item) => (
               <ShopItemRow

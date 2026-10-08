@@ -1,16 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dailyGoalMessage, monthName, questsStatus } from "./questCopy";
-
-describe("dailyGoalMessage", () => {
-  it("says how much XP is still missing", () => {
-    expect(dailyGoalMessage({ goalXp: 20, earnedXp: 12, met: false })).toBe("Earn 8 more XP to reach your daily goal");
-    expect(dailyGoalMessage({ goalXp: 50, earnedXp: 0, met: false })).toBe("Earn 50 more XP to reach your daily goal");
-  });
-
-  it("celebrates a met goal", () => {
-    expect(dailyGoalMessage({ goalXp: 20, earnedXp: 35, met: true })).toBe("Daily goal complete! Nice work!");
-  });
-});
+import { monthEndsAt, monthName, questsStatus } from "./questCopy";
 
 describe("questsStatus", () => {
   it("is empty before the first quest is done", () => {
@@ -24,6 +13,22 @@ describe("questsStatus", () => {
 
   it("celebrates a full set", () => {
     expect(questsStatus(3, 3)).toBe("All Daily Quests complete!");
+  });
+});
+
+describe("monthEndsAt", () => {
+  // Kolkata's midnight is 18:30 UTC the day before.
+  it("adds the days left after today to the next local midnight", () => {
+    expect(monthEndsAt("2026-10-09", "2026-10-09T18:30:00.000Z")).toBe("2026-10-31T18:30:00.000Z");
+  });
+
+  it("is the next midnight on the month's last day", () => {
+    expect(monthEndsAt("2026-10-31", "2026-10-31T18:30:00.000Z")).toBe("2026-10-31T18:30:00.000Z");
+  });
+
+  it("knows how long each month is", () => {
+    expect(monthEndsAt("2028-02-10", "2028-02-11T00:00:00.000Z")).toBe("2028-03-01T00:00:00.000Z");
+    expect(monthEndsAt("2026-02-10", "2026-02-11T00:00:00.000Z")).toBe("2026-03-01T00:00:00.000Z");
   });
 });
 

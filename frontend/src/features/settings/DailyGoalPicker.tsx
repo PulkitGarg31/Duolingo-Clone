@@ -34,7 +34,7 @@ export function DailyGoalPicker({ value, onChange }: DailyGoalPickerProps) {
     <div>
       <div className="flex items-center gap-3">
         <Owl pose="idle" size={72} className="shrink-0" />
-        <SpeechBubble tail="left" className="mb-3">
+        <SpeechBubble tail="left" className="mb-3 text-body">
           What&apos;s your daily learning goal?
         </SpeechBubble>
       </div>

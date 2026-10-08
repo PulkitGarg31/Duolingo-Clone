@@ -57,7 +57,7 @@ export function SettingsView({ saved, displayName, saving, onSave, demoTools }: 
       </div>
       <div id={SETTINGS_TARGETS.preferences} className="scroll-mt-24">
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-[24px] leading-[30px] font-extrabold text-fg-strong md:text-title-lg">Preferences</h1>
+          <h1 className="text-[24px]/[30px] font-extrabold text-fg-strong md:text-title-lg">Preferences</h1>
           <div className="hidden w-[180px] lg:block">{saveButton}</div>
         </div>
         <SettingsSection title="Lesson experience">

@@ -17,7 +17,7 @@ export function GemPacks() {
   const showComingSoon = useComingSoon();
   return (
     <section className="mt-8">
-      <h2 className="mb-4 text-[22px] leading-7 font-extrabold text-fg-strong md:text-heading">Gems</h2>
+      <h2 className="mb-4 text-[22px]/7 font-extrabold text-fg-strong md:text-heading">Gems</h2>
       <ul className="grid grid-cols-3 gap-3 sm:gap-4">
         {PACKS.map(({ name, Art }) => (
           <li key={name}>
@@ -29,7 +29,13 @@ export function GemPacks() {
             >
               <Art size={72} className="h-16 w-auto sm:h-[72px]" />
               <span className="text-body font-extrabold text-fg">{name}</span>
-              <ComingSoonPill short />
+              {/* Phone tiles are too narrow for the full label. */}
+              <span className="flex sm:hidden">
+                <ComingSoonPill short />
+              </span>
+              <span className="hidden sm:flex">
+                <ComingSoonPill />
+              </span>
             </CardButton>
           </li>
         ))}

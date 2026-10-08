@@ -41,7 +41,7 @@ export function PracticeHub({ me, path, practiceStarting, onEarnHearts, onTimed,
   const timed = timedAvailability(path);
   return (
     <div className="mx-auto w-full max-w-[592px] px-4 pt-6 pb-12 lg:px-0">
-      <h1 className="text-[24px] leading-[30px] font-extrabold text-fg-strong md:text-title-lg">Practice</h1>
+      <h1 className="text-[24px]/[30px] font-extrabold text-fg-strong md:text-title-lg">Practice</h1>
       <p className="mt-1 text-body text-fg-2 md:text-subtitle">Review what you&apos;ve learned and earn hearts</p>
       <div className="mt-6 grid grid-cols-1 gap-4">
         <PracticeCard

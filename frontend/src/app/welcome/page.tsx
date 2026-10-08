@@ -26,7 +26,7 @@ const COURSES = [
 ] as const;
 
 /** The marketing headline style: lowercase, extra heavy, brand green. */
-const HEADLINE = "text-[36px] leading-[40px] font-black tracking-[-0.02em] lowercase md:text-[48px] md:leading-[52px]";
+const HEADLINE = "text-[36px]/[40px] font-black tracking-[-0.02em] lowercase md:text-[48px]/[52px]";
 
 /**
  * The closing band and the footer use the fixed brand green (it does not lighten in dark mode, so white text
@@ -90,7 +90,7 @@ function Hero() {
     <section className="mx-auto flex max-w-[988px] flex-col items-center gap-8 px-4 pt-4 pb-14 min-[1080px]:flex-row min-[1080px]:justify-center min-[1080px]:gap-12 min-[1080px]:py-20">
       <HeroArt />
       <div className="flex w-full max-w-[424px] flex-col items-center text-center">
-        <h1 className="text-[24px] leading-8 font-extrabold text-fg md:text-hero">The fun, free way to learn Spanish!</h1>
+        <h1 className="text-[24px]/8 font-extrabold text-fg md:text-hero">The fun, free way to learn Spanish!</h1>
         <div className="mt-8 flex w-full max-w-[330px] flex-col gap-3">
           <ButtonLink href="/learn" fullWidth>
             Get started
@@ -202,7 +202,7 @@ interface FeatureSectionProps {
 
 function FeatureSection({ title, art, flipped = false, children }: FeatureSectionProps) {
   return (
-    <section className="mx-auto grid max-w-[988px] items-center gap-10 px-6 py-14 md:grid-cols-2 md:gap-12 md:py-20 min-[1080px]:px-0">
+    <section className="mx-auto grid max-w-[988px] items-center gap-10 px-6 py-14 md:grid-cols-2 md:gap-12 md:px-10 md:py-20 min-[1080px]:px-0">
       <div className={flipped ? "md:order-2" : undefined}>{art}</div>
       <div className="mx-auto max-w-[424px] text-center md:mx-0 md:text-left">
         <h2 className={cn(HEADLINE, "text-owl")}>{title}</h2>
@@ -245,7 +245,7 @@ function PictureCardsArt() {
         {PICTURE_CARDS.map(({ image, label, selected }) => (
           <Card key={image} tile interactive selected={selected} padding="sm" className="flex flex-col items-center gap-2 px-2">
             <Illustration name={image} className="h-auto w-[86%]" />
-            <span className="text-[15px] leading-5 font-semibold">{label}</span>
+            <span className="text-center text-[15px] leading-5 font-semibold">{label}</span>
           </Card>
         ))}
       </div>
@@ -293,7 +293,7 @@ function DailyGoalArt() {
             <li
               key={name}
               className={cn(
-                "flex justify-between border-t-2 border-line px-4 py-2.5 text-[15px] leading-5 first:border-t-0",
+                "flex justify-between border-t-2 border-line px-4 py-2.5 text-[15px] leading-5 font-semibold first:border-t-0",
                 selected ? "bg-selected text-fg-selected" : "text-fg",
               )}
             >
@@ -327,7 +327,7 @@ const FOOTER_LINKS = [
 function Footer() {
   const showComingSoon = useComingSoon();
   return (
-    <footer className="border-t-2 border-on-color-fixed/20 bg-(--unit-green) px-6 pt-8 pb-10 text-on-color-fixed">
+    <footer className="border-t-2 border-on-color-fixed/20 bg-(--unit-green) px-6 pt-8 pb-10 text-on-color-fixed md:px-10">
       <div className="mx-auto max-w-[988px]">
         <ul className="flex flex-wrap gap-x-8 gap-y-2">
           {FOOTER_LINKS.map(({ label, feature }) => (

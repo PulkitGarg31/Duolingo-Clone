@@ -20,7 +20,7 @@ export function LeaderboardSkeleton() {
       </div>
       <div className="pt-2">
         {ROWS.map((row) => (
-          <div key={row} className="flex min-h-16 items-center py-2 pr-6 pl-4">
+          <div key={row} className="flex min-h-[74px] items-center py-2 pr-6 pl-4">
             <span className="w-[41px] shrink-0" />
             <Skeleton className="mr-7 ml-3 size-12 shrink-0 rounded-full" />
             <Skeleton className="h-[18px] w-40 rounded-full" />

@@ -2,11 +2,11 @@ import { Skeleton, SkeletonGroup } from "@/components/ui";
 
 const ROWS = [1, 2, 3] as const;
 
-/** The quests page's shape while it loads: the header card, then the three quest rows. */
+/** The quests page's shape while it loads: the monthly quest card, then the three quest rows. */
 export function QuestsSkeleton() {
   return (
     <SkeletonGroup label="Loading quests" className="mx-auto w-full max-w-[592px] px-4 pt-4 pb-12 lg:px-0 lg:pt-6">
-      <Skeleton className="mt-6 h-[190px] rounded-lg" />
+      <Skeleton className="mt-6 h-[184px] rounded-lg" />
       <Skeleton className="mt-10 h-7 w-40 rounded-full" />
       <Skeleton className="mt-3 h-5 w-full max-w-[420px] rounded-full" />
       <div className="mt-4 rounded-lg border-2 border-line">

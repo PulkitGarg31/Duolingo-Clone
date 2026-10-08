@@ -11,7 +11,7 @@ export default function NotFound() {
       </header>
       <main className="flex flex-1 flex-col items-center justify-center px-6 pb-20 text-center">
         <Owl pose="lost" size={200} />
-        <h1 className="mt-6 text-[24px] leading-[30px] font-extrabold text-fg-strong md:text-title-lg">
+        <h1 className="mt-6 text-[24px]/[30px] font-extrabold text-fg-strong md:text-title-lg">
           We couldn&apos;t find that page
         </h1>
         <p className="mt-2 max-w-[420px] text-body text-fg-2">The page you&apos;re looking for doesn&apos;t exist or was moved.</p>

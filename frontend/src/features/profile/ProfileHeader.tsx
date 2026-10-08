@@ -26,7 +26,7 @@ export function ProfileHeader({ user, course }: ProfileHeaderProps) {
     <header>
       <AvatarPanel user={user} onEdit={() => showComingSoon("profile editing")} />
       <div className="px-4 lg:px-0">
-        <h1 className="mt-6 text-[24px] leading-[30px] font-extrabold text-fg-strong md:text-title-lg">
+        <h1 className="mt-6 text-[24px]/[30px] font-extrabold text-fg-strong md:text-title-lg">
           {user.displayName}
         </h1>
         <p className="mt-1 text-body text-fg-2">

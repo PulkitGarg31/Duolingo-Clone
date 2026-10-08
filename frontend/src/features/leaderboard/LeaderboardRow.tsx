@@ -2,6 +2,7 @@
 
 import { motion } from "motion/react";
 import Link from "next/link";
+import { FlameIcon } from "@/components/icons/FlameIcon";
 import { MedalIcon, type MedalRank } from "@/components/icons/MedalIcon";
 import { Avatar, CountUp } from "@/components/ui";
 import type { LeagueRowOut, LeagueZone } from "@/lib/api/types";
@@ -45,9 +46,25 @@ function RankCell({ rank, zone }: { rank: number; zone: LeagueZone }) {
   );
 }
 
+/** The name, with the learner's streak under it (a flame and the day count) once they have one. */
+function NameCell({ name, streak }: { name: string; streak: number }) {
+  return (
+    <span className="flex min-w-0 flex-1 flex-col">
+      <span className="truncate text-[17px] leading-6 font-extrabold md:text-[19px]">{name}</span>
+      {streak > 0 && (
+        <span className="flex items-center gap-0.5 text-[15px] leading-[25px] font-extrabold text-streak">
+          <FlameIcon size={16} />
+          {streak}
+          <span className="sr-only"> day streak</span>
+        </span>
+      )}
+    </span>
+  );
+}
+
 /**
- * One learner on the board, linking to their profile. When a refresh changes the order the row glides to its new
- * rank and its XP counts up.
+ * One learner on the board, linking to their profile. Rows keep one height whether or not a streak line shows.
+ * When a refresh changes the order the row glides to its new rank and its XP counts up.
  */
 export function LeaderboardRow({ row }: { row: LeagueRowOut }) {
   const zoneTinted = row.isMe && row.zone !== "safe";
@@ -56,14 +73,14 @@ export function LeaderboardRow({ row }: { row: LeagueRowOut }) {
       <Link
         href={row.isMe ? "/profile" : `/profile/${row.userId}`}
         className={cn(
-          "flex min-h-16 items-center py-2 pr-6 pl-4 md:rounded-lg",
+          "flex min-h-[74px] items-center py-2 pr-6 pl-4 md:rounded-lg",
           "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus",
           row.isMe ? MY_ROW_COLORS[row.zone] : "text-fg hover:bg-subtle",
         )}
       >
         <RankCell rank={row.rank} zone={row.zone} />
         <Avatar name={row.displayName} color={row.avatarColor} size={48} className="mr-7 ml-3" />
-        <span className="min-w-0 flex-1 truncate text-[17px] leading-6 font-extrabold md:text-[19px]">{row.displayName}</span>
+        <NameCell name={row.displayName} streak={row.streak} />
         <CountUp
           value={row.xp}
           from={row.xp}
