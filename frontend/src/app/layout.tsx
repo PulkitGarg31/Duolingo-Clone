@@ -7,10 +7,11 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 // 600 is the regular UI weight, 800 the bold one and 900 the display one (Nunito draws lighter than the
-// rounded face it stands in for, so each role steps up a weight).
+// rounded face it stands in for, so each role steps up a weight). 700 is deliberately absent: a stray
+// `font-bold` then resolves to 800, the bold UI weight.
 const nunito = Nunito({
   subsets: ["latin"],
-  weight: ["600", "700", "800", "900"],
+  weight: ["600", "800", "900"],
   variable: "--font-nunito",
   display: "swap",
 });

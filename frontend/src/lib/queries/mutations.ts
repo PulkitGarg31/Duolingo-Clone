@@ -1,4 +1,10 @@
-import { useMutation, useQueryClient, type QueryClient, type UseMutationResult } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+  type UseMutationOptions,
+  type UseMutationResult,
+} from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   ackLeagueResult,
@@ -39,14 +45,17 @@ import type {
   ShopItemCode,
   StartSessionIn,
 } from "@/lib/api/types";
+import { serverNow } from "@/lib/time/serverClock";
 import { qk } from "./keys";
 
 /*
  * One hook per write. Game numbers are never guessed: caches change from the server's answer, except for a
  * few visual or preference changes applied optimistically and rolled back on error. Unreachable-server
  * failures and 500s are toasted app-wide (onUnhandledActionError); features handle domain errors through
- * `error.code`.
+ * `error.code`. Each hook wraps an options factory (`…Mutation(queryClient)`) that holds its cache rules.
  */
+
+type MutationConfig<TData, TVariables, TSnapshot = unknown> = UseMutationOptions<TData, ApiError, TVariables, TSnapshot>;
 
 /** Applies `change` to the cached `me`, when there is one. */
 function patchMe(queryClient: QueryClient, change: (me: MeOut) => MeOut): void {
@@ -65,6 +74,21 @@ export interface StartSessionOptions {
   replace?: boolean;
 }
 
+export function startSessionMutation(
+  queryClient: QueryClient,
+  openLesson: (href: string) => void,
+): MutationConfig<SessionOut, StartSessionIn> {
+  return {
+    mutationFn: startSession,
+    onSuccess: (session) => {
+      queryClient.setQueryData(qk.session(session.id), session);
+      // `me.activeSession` changed, and a legendary start charged gems.
+      void invalidateMe(queryClient);
+      openLesson(`/lesson/${session.id}`);
+    },
+  };
+}
+
 /**
  * Starts or resumes a session from a click (never on page mount) and opens the lesson player:
  * `start.mutate({ kind: "lesson", nodeId })`. Errors to handle: OUT_OF_HEARTS, NODE_LOCKED,
@@ -77,17 +101,9 @@ export function useStartSession({ replace = false }: StartSessionOptions = {}): 
 > {
   const queryClient = useQueryClient();
   const router = useRouter();
-  return useMutation({
-    mutationFn: startSession,
-    onSuccess: (session) => {
-      queryClient.setQueryData(qk.session(session.id), session);
-      // `me.activeSession` changed, and a legendary start charged gems.
-      void invalidateMe(queryClient);
-      const href = `/lesson/${session.id}`;
-      if (replace) router.replace(href);
-      else router.push(href);
-    },
-  });
+  return useMutation(
+    startSessionMutation(queryClient, (href) => (replace ? router.replace(href) : router.push(href))),
+  );
 }
 
 export interface SubmitAnswerVariables {
@@ -96,22 +112,24 @@ export interface SubmitAnswerVariables {
   answer: AnswerIn;
 }
 
+export function submitAnswerMutation(queryClient: QueryClient): MutationConfig<AnswerResultOut, SubmitAnswerVariables> {
+  return {
+    mutationFn: ({ sessionId, itemId, answer }) => submitAnswer(sessionId, itemId, answer),
+    onSuccess: (result) => patchMe(queryClient, (me) => ({ ...me, hearts: result.hearts })),
+  };
+}
+
 /**
  * Grades one answer slot. Safe to repeat: the same payload replays the stored grade. The lesson reducer owns
  * the result; only the hearts in `me` are patched here.
  */
 export function useSubmitAnswer(): UseMutationResult<AnswerResultOut, ApiError, SubmitAnswerVariables> {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ sessionId, itemId, answer }) => submitAnswer(sessionId, itemId, answer),
-    onSuccess: (result) => patchMe(queryClient, (me) => ({ ...me, hearts: result.hearts })),
-  });
+  return useMutation(submitAnswerMutation(queryClient));
 }
 
-/** Completes a session (`complete.mutate(sessionId)`) and returns its receipt; a repeat returns the same one. */
-export function useCompleteSession(): UseMutationResult<CompletionOut, ApiError, number> {
-  const queryClient = useQueryClient();
-  return useMutation({
+export function completeSessionMutation(queryClient: QueryClient): MutationConfig<CompletionOut, number> {
+  return {
     mutationFn: completeSession,
     onSuccess: (completion) => {
       queryClient.setQueryData(qk.me, completion.me);
@@ -127,20 +145,30 @@ export function useCompleteSession(): UseMutationResult<CompletionOut, ApiError,
       ];
       for (const queryKey of stale) void queryClient.invalidateQueries({ queryKey });
     },
-  });
+  };
 }
 
-/** Ends a session early (`quit.mutate(sessionId)`); the server decides the outcome. Safe to repeat. */
-export function useQuitSession(): UseMutationResult<QuitOut, ApiError, number> {
+/** Completes a session (`complete.mutate(sessionId)`) and returns its receipt; a repeat returns the same one. */
+export function useCompleteSession(): UseMutationResult<CompletionOut, ApiError, number> {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useMutation(completeSessionMutation(queryClient));
+}
+
+export function quitSessionMutation(queryClient: QueryClient): MutationConfig<QuitOut, number> {
+  return {
     mutationFn: quitSession,
     onSuccess: (quit) => {
       patchMe(queryClient, (me) => ({ ...me, hearts: quit.hearts }));
       void invalidateMe(queryClient);
       void queryClient.invalidateQueries({ queryKey: qk.path });
     },
-  });
+  };
+}
+
+/** Ends a session early (`quit.mutate(sessionId)`); the server decides the outcome. Safe to repeat. */
+export function useQuitSession(): UseMutationResult<QuitOut, ApiError, number> {
+  const queryClient = useQueryClient();
+  return useMutation(quitSessionMutation(queryClient));
 }
 
 // ---------------------------------------------------------------------------------------------------- path
@@ -149,13 +177,8 @@ interface PathSnapshot {
   previous: PathOut | undefined;
 }
 
-/**
- * Opens a reachable chest (`claim.mutate(nodeId)`). The chest pops open at once (a visual change only, rolled
- * back on error); the gem count changes when the server confirms. Safe to repeat.
- */
-export function useClaimChest(): UseMutationResult<ChestClaimOut, ApiError, number, PathSnapshot> {
-  const queryClient = useQueryClient();
-  return useMutation({
+export function claimChestMutation(queryClient: QueryClient): MutationConfig<ChestClaimOut, number, PathSnapshot> {
+  return {
     mutationFn: claimChest,
     onMutate: async (nodeId) => {
       await queryClient.cancelQueries({ queryKey: qk.path });
@@ -170,7 +193,16 @@ export function useClaimChest(): UseMutationResult<ChestClaimOut, ApiError, numb
       patchMe(queryClient, (me) => ({ ...me, gems: claim.gems }));
       void queryClient.invalidateQueries({ queryKey: qk.path });
     },
-  });
+  };
+}
+
+/**
+ * Opens a reachable chest (`claim.mutate(nodeId)`). The chest pops open at once (a visual change only, rolled
+ * back on error); the gem count changes when the server confirms. Safe to repeat.
+ */
+export function useClaimChest(): UseMutationResult<ChestClaimOut, ApiError, number, PathSnapshot> {
+  const queryClient = useQueryClient();
+  return useMutation(claimChestMutation(queryClient));
 }
 
 function withChestOpened(path: PathOut, nodeId: number): PathOut {
@@ -191,6 +223,16 @@ export interface PurchaseVariables {
   idempotencyKey: string;
 }
 
+export function purchaseMutation(queryClient: QueryClient): MutationConfig<PurchaseOut, PurchaseVariables> {
+  return {
+    mutationFn: ({ itemCode, idempotencyKey }) => createPurchase({ itemCode }, idempotencyKey),
+    onSuccess: (purchase) => {
+      patchMe(queryClient, (me) => withPurchase(me, purchase, serverNow()));
+      void queryClient.invalidateQueries({ queryKey: qk.shop });
+    },
+  };
+}
+
 /**
  * Buys a shop item: `purchase.mutate({ itemCode: "heart_refill", idempotencyKey: newIdempotencyKey() })`.
  * Automatic retries reuse the variables, and so the key: a retried request can never charge twice.
@@ -199,19 +241,22 @@ export interface PurchaseVariables {
  */
 export function usePurchase(): UseMutationResult<PurchaseOut, ApiError, PurchaseVariables> {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ itemCode, idempotencyKey }) => createPurchase({ itemCode }, idempotencyKey),
-    onSuccess: ({ gems, effect }) => {
-      patchMe(queryClient, (me) => ({
-        ...me,
-        gems,
-        hearts: effect.hearts,
-        streak: { ...me.streak, freezesEquipped: effect.streakFreezes },
-        xpBoost: { ...me.xpBoost, active: effect.xpBoostUntil !== null, endsAt: effect.xpBoostUntil },
-      }));
-      void queryClient.invalidateQueries({ queryKey: qk.shop });
-    },
-  });
+  return useMutation(purchaseMutation(queryClient));
+}
+
+/** `me` after a purchase: the receipt carries the current balance, hearts, freezes and boost end. */
+function withPurchase(me: MeOut, { gems, effect }: PurchaseOut, nowMs: number): MeOut {
+  // `xpBoostUntil` may name a boost that already ran out (the stored end is kept), so only an end still
+  // ahead of server time means an active boost.
+  const boostEndsAt = effect.xpBoostUntil;
+  const boostActive = boostEndsAt !== null && Date.parse(boostEndsAt) > nowMs;
+  return {
+    ...me,
+    gems,
+    hearts: effect.hearts,
+    streak: { ...me.streak, freezesEquipped: effect.streakFreezes },
+    xpBoost: { ...me.xpBoost, active: boostActive, endsAt: boostActive ? boostEndsAt : null },
+  };
 }
 
 interface LeagueResultSnapshot {
@@ -219,10 +264,10 @@ interface LeagueResultSnapshot {
   league: LeagueOut | undefined;
 }
 
-/** Marks a league result as seen (`ack.mutate(membershipId)`): the modal closes at once, back on error. */
-export function useAckLeagueResult(): UseMutationResult<LeagueAckOut, ApiError, number, LeagueResultSnapshot> {
-  const queryClient = useQueryClient();
-  return useMutation({
+export function ackLeagueResultMutation(
+  queryClient: QueryClient,
+): MutationConfig<LeagueAckOut, number, LeagueResultSnapshot> {
+  return {
     mutationFn: ackLeagueResult,
     onMutate: async (membershipId) => {
       await Promise.all([
@@ -247,7 +292,13 @@ export function useAckLeagueResult(): UseMutationResult<LeagueAckOut, ApiError, 
       if (snapshot?.me) queryClient.setQueryData(qk.me, snapshot.me);
       if (snapshot?.league) queryClient.setQueryData(qk.league, snapshot.league);
     },
-  });
+  };
+}
+
+/** Marks a league result as seen (`ack.mutate(membershipId)`): the modal closes at once, back on error. */
+export function useAckLeagueResult(): UseMutationResult<LeagueAckOut, ApiError, number, LeagueResultSnapshot> {
+  const queryClient = useQueryClient();
+  return useMutation(ackLeagueResultMutation(queryClient));
 }
 
 // ------------------------------------------------------------------------------------------------ settings
@@ -264,14 +315,10 @@ function optimisticPart(patch: SettingsPatchIn): SettingsPatchIn {
   return preview;
 }
 
-/**
- * Saves settings (any subset). Preferences show at once and roll back on error; a new time zone is applied
- * when the server answers, and a streak shift refreshes everything. A new daily goal refreshes the XP ring
- * (`me.dailyGoal`), the "Earn {goal} XP" quest and today's activity.
- */
-export function useUpdateSettings(): UseMutationResult<SettingsUpdateOut, ApiError, SettingsPatchIn, SettingsSnapshot> {
-  const queryClient = useQueryClient();
-  return useMutation({
+export function updateSettingsMutation(
+  queryClient: QueryClient,
+): MutationConfig<SettingsUpdateOut, SettingsPatchIn, SettingsSnapshot> {
+  return {
     mutationFn: updateSettings,
     onMutate: async (patch) => {
       await Promise.all([
@@ -305,7 +352,17 @@ export function useUpdateSettings(): UseMutationResult<SettingsUpdateOut, ApiErr
         void queryClient.invalidateQueries({ queryKey: ["me", "activity"] });
       }
     },
-  });
+  };
+}
+
+/**
+ * Saves settings (any subset). Preferences show at once and roll back on error; a new time zone is applied
+ * when the server answers, and a streak shift refreshes everything. A new daily goal refreshes the XP ring
+ * (`me.dailyGoal`), the "Earn {goal} XP" quest and today's activity.
+ */
+export function useUpdateSettings(): UseMutationResult<SettingsUpdateOut, ApiError, SettingsPatchIn, SettingsSnapshot> {
+  const queryClient = useQueryClient();
+  return useMutation(updateSettingsMutation(queryClient));
 }
 
 // ------------------------------------------------------------------------------------------------ demo tools
@@ -314,15 +371,22 @@ export function useUpdateSettings(): UseMutationResult<SettingsUpdateOut, ApiErr
  * Demo tools change shared, non-idempotent state, so they are never retried (a retried "+5 HOURS" would jump
  * ten hours). Time travel and resets can change any number on any screen, so everything is refetched.
  */
+export function devMutation<TData, TVariables = void>(
+  queryClient: QueryClient,
+  mutationFn: (variables: TVariables) => Promise<TData>,
+): MutationConfig<TData, TVariables> {
+  return {
+    mutationFn,
+    retry: 0,
+    onSuccess: () => void queryClient.invalidateQueries(),
+  };
+}
+
 function useDevMutation<TData, TVariables = void>(
   mutationFn: (variables: TVariables) => Promise<TData>,
 ): UseMutationResult<TData, ApiError, TVariables> {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn,
-    retry: 0,
-    onSuccess: () => void queryClient.invalidateQueries(),
-  });
+  return useMutation(devMutation(queryClient, mutationFn));
 }
 
 /** `advance.mutate({ hours: 5 })`: moves the server clock forward (1 minute to 60 days). */

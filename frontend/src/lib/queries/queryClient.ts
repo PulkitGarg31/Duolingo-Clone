@@ -1,5 +1,6 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, onlineManager } from "@tanstack/react-query";
 import { ApiError, isRetryable } from "@/lib/api/errors";
+import { wakeGate, type WakeState } from "@/lib/api/serverStatus";
 
 // Every query and mutation rejects with an ApiError (apiFetch converts everything), so hooks expose it typed.
 declare module "@tanstack/react-query" {
@@ -35,6 +36,33 @@ export function createQueryClient(): QueryClient {
         retryDelay,
       },
     },
+  });
+}
+
+/** The part of the wake gate that says whether the server answers. */
+interface ServerReadiness {
+  getSnapshot(): WakeState;
+  subscribe(listener: () => void): () => void;
+}
+
+/**
+ * TanStack Query holds fetches and retries while it believes the app is offline and resumes them once it is
+ * back online. Feeding it the wake gate as well as the browser's connection makes a request that meets a
+ * sleeping server wait until /health answers, instead of spending its retries while the server boots.
+ * Call it once in the browser; calling it again replaces the previous wiring.
+ */
+export function pauseWhileServerAsleep(gate: ServerReadiness = wakeGate): void {
+  onlineManager.setEventListener((setOnline) => {
+    const update = () => setOnline(gate.getSnapshot().phase === "ready" && navigator.onLine !== false);
+    update();
+    const unsubscribe = gate.subscribe(update);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
   });
 }
 
