@@ -1,0 +1,84 @@
+"""GET /me: everything the app shell shows, built fresh from the learner's facts at `now`.
+
+It is never stored or cached: the completion response attaches a newly built one after its commit.
+"""
+
+from sqlalchemy.orm import Session
+
+from app.domain import streak, xp
+from app.domain.calendar import league_week_bounds, league_week_start
+from app.domain.enums import StreakStatus
+from app.domain.rules import MAX_STREAK_FREEZES, XP_BOOST_MULTIPLIER
+from app.repositories import ledger_repo, play_repo, system_repo
+from app.schemas.me import (
+    ActiveSessionRef,
+    DailyGoalOut,
+    DevInfo,
+    MeOut,
+    MeStreak,
+    MeUser,
+    MeXp,
+    XpBoostOut,
+)
+from app.services import hearts_service, league_service, path_service, settings_service, streak_service
+from app.services.context import RequestContext
+
+
+def build_me(db: Session, ctx: RequestContext) -> MeOut:
+    """The learner's whole shell state: top bar stats, daily goal, league card and pending modals."""
+    user, stats = ctx.user, ctx.stats
+    week_start, week_end = league_week_bounds(league_week_start(ctx.now))
+    xp_today = ledger_repo.xp_on(db, user.id, ctx.today)
+    goal = ctx.preferences.daily_goal_xp
+    active = play_repo.active_session(db, user.id)
+    return MeOut(
+        user=MeUser.model_validate(user),
+        course=path_service.course_brief(path_service.course_of(db, user)),
+        server_now=ctx.now,
+        local_date=ctx.today,
+        xp=MeXp(
+            total=ledger_repo.total_xp(db, user.id),
+            today=xp_today,
+            this_week=ledger_repo.xp_between(db, user.id, week_start, week_end),
+        ),
+        gems=stats.gems,
+        hearts=hearts_service.hearts_out(db, stats, ctx.settings),
+        streak=_streak(db, ctx),
+        daily_goal=DailyGoalOut(goal_xp=goal, earned_xp=xp_today, met=xp_today >= goal),
+        league=league_service.me_league(db, ctx),
+        xp_boost=_xp_boost(ctx),
+        active_session=None
+        if active is None
+        else ActiveSessionRef(id=active.id, kind=active.kind, node_id=active.node_id),
+        pending_league_result=league_service.pending_result(db, user.id),
+        settings=settings_service.settings_out(user, ctx.preferences),
+        dev=DevInfo(enabled=True, clock_offset_seconds=system_repo.offset_seconds(db))
+        if ctx.settings.enable_dev_tools
+        else None,
+    )
+
+
+def _streak(db: Session, ctx: RequestContext) -> MeStreak:
+    """The streak flame: at risk (grey) until a session today extends it (orange)."""
+    stats = ctx.stats
+    status = streak.status(streak_service.state_of(stats), ctx.today)
+    return MeStreak(
+        current=stats.streak_current,
+        longest=stats.streak_longest,
+        status=status,
+        extended_today=status == StreakStatus.EXTENDED,
+        frozen_yesterday=streak_service.frozen_yesterday(db, ctx.user.id, ctx.today),
+        freezes_equipped=stats.streak_freezes,
+        max_freezes=MAX_STREAK_FREEZES,
+        next_milestone=streak_service.next_milestone(stats.streak_current),
+    )
+
+
+def _xp_boost(ctx: RequestContext) -> XpBoostOut:
+    """The Double XP power-up; its end time is shown only while it runs."""
+    active = xp.is_boost_active(ctx.stats.xp_boost_until, ctx.now)
+    return XpBoostOut(
+        active=active,
+        ends_at=ctx.stats.xp_boost_until if active else None,
+        multiplier=XP_BOOST_MULTIPLIER,
+    )
