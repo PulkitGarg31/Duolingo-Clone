@@ -1,0 +1,23 @@
+/* Translucent circles rising slowly behind the Timed practice intro. Each bubble sets --size, --x, --alpha,
+   --rest (where it sits when motion is reduced), --duration and --delay. Negative delays start every bubble
+   part-way up, so the screen opens already full of them. */
+.bubble {
+  position: absolute;
+  top: 0;
+  left: var(--x);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 9999px;
+  background: rgb(255 255 255 / var(--alpha));
+  transform: translateY(var(--rest));
+  animation: rise var(--duration) linear var(--delay) infinite;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(100dvh);
+  }
+  to {
+    transform: translateY(calc(-1 * var(--size)));
+  }
+}
