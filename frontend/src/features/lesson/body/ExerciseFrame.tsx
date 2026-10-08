@@ -27,7 +27,8 @@ export function ExerciseFrame({ item, ...viewProps }: FrameProps) {
     >
       <div>
         {item.label && <ExerciseLabel label={item.label} />}
-        <h1 className="text-[25px] leading-[31px] font-extrabold text-fg md:text-title-xl">{item.exercise.instruction}</h1>
+        {/* The size/line-height shorthand leaves `md:text-title-xl` free to apply its own 40 px line height. */}
+        <h1 className="text-[25px]/[31px] font-extrabold text-fg md:text-title-xl">{item.exercise.instruction}</h1>
       </div>
       <LayoutGroup id={`item-${item.id}`}>
         <ExerciseView {...viewProps} exercise={item.exercise} />

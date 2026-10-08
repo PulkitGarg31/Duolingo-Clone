@@ -26,7 +26,7 @@ export function CoachSlide({ message }: { message: CoachMessage }) {
         transition={{ delay: 0.15, duration: 0.2, ease: SPRING }}
       >
         <SpeechBubble tail="left" size="lg">
-          <p className="text-[17px] leading-[25px] font-semibold text-fg md:text-subtitle">{text}</p>
+          <p className="text-[17px]/[25px] font-semibold text-fg md:text-subtitle">{text}</p>
         </SpeechBubble>
       </motion.div>
     </div>

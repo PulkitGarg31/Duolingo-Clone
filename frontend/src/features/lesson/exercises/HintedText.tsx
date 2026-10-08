@@ -81,7 +81,8 @@ function HintWord({ text, hint, onSpeak }: HintWordProps) {
           {text}
         </button>
       </PopoverAnchor>
-      <PopoverContent side="bottom" autoFocus={false} offset={10} className="min-w-28">
+      {/* Hint popovers are a little squarer than other popovers (12 px corners instead of 15). */}
+      <PopoverContent side="bottom" autoFocus={false} offset={10} className="min-w-28" style={{ borderRadius: 12 }}>
         <ul aria-label={`Meanings of ${text}`}>
           {meanings.map((meaning, index) => (
             <li

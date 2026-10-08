@@ -11,12 +11,15 @@ export function LessonSkeleton() {
           <Skeleton className="h-7 w-12 rounded-md" />
         </div>
       </div>
-      <div className="mx-auto grid w-full max-w-[600px] gap-6 px-4 pt-6 md:pt-16">
-        <Skeleton className="h-8 w-3/5 rounded-md" />
-        <div className="grid grid-cols-3 gap-3 sm:gap-4">
-          {[0, 1, 2].map((card) => (
-            <Skeleton key={card} className="aspect-[3/4] rounded-md" />
-          ))}
+      {/* The gutter sits outside the 600 px column, as in the player, so the blocks line up with the exercise. */}
+      <div className="px-4 pt-6 md:pt-16">
+        <div className="mx-auto grid w-full max-w-[600px] gap-4 md:gap-6">
+          <Skeleton className="h-8 w-3/5 rounded-md" />
+          <div className="grid grid-cols-3 gap-3 sm:gap-4">
+            {[0, 1, 2].map((card) => (
+              <Skeleton key={card} className="aspect-[3/4] rounded-md" />
+            ))}
+          </div>
         </div>
       </div>
     </SkeletonGroup>

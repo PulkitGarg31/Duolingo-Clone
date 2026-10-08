@@ -50,6 +50,18 @@ export function LessonScreen({ state, gems, audio, actions, pending }: LessonScr
     );
   }
 
+  if (phase.name === "exiting") {
+    // On the way out (after the last celebration, say) the lesson must not flash back: only the CONTINUE
+    // that was pressed stays, with its loading dots, until the next page replaces the player.
+    return (
+      <div className="min-h-dvh bg-page">
+        <div className="fixed inset-x-0 bottom-0 z-(--z-footer)">
+          <ActionFooter label="Continue" onClick={() => undefined} loading />
+        </div>
+      </div>
+    );
+  }
+
   const item = phase.name === "coach" || phase.name === "error" ? undefined : shownItem(state);
   return (
     <LessonKeyboard screen={keyboardScreen(state)} onPrimary={() => primaryAction(phase, actions)} onQuit={actions.openQuit} onReplay={actions.replay}>
@@ -61,7 +73,8 @@ export function LessonScreen({ state, gems, audio, actions, pending }: LessonScr
           onQuit={actions.openQuit}
           onTimeUp={actions.timeUp}
         />
-        <main className="flex flex-col items-center px-4 pb-[140px] md:pb-[164px]">
+        {/* Clipped sideways: an exercise sliding in from the right would otherwise widen a phone's page. */}
+        <main className="flex flex-col items-center overflow-x-clip px-4 pb-[140px] md:pb-[164px]">
           <div className="grid w-full max-w-[600px] flex-1 content-start md:min-h-[450px] md:content-center">
             {phase.name === "coach" && <CoachSlide message={phase.message} />}
             {phase.name === "error" && <ErrorNotice error={phase.error} />}

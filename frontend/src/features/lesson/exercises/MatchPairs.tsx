@@ -85,7 +85,7 @@ export function MatchPairs({ exercise, draft, onDraft, locked, onTap, audio, onA
 
   const rows = Math.max(exercise.left.length, exercise.right.length);
   return (
-    <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 xs:gap-y-4">
+    <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 min-[350px]:gap-y-4">
       {Array.from({ length: rows }, (_, row) =>
         (["left", "right"] as const).map((side) => {
           const token = (side === "left" ? exercise.left : exercise.right)[row];

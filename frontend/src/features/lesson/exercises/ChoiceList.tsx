@@ -33,7 +33,7 @@ export function ChoiceList({ exercise, draft, onDraft, locked, hintsEnabled, onT
   });
 
   return (
-    <div className="grid gap-6 md:gap-8">
+    <div className="grid gap-4 md:gap-6">
       {exercise.prompt && <PromptLine prompt={exercise.prompt} audio={audio} hintsEnabled={hintsEnabled} />}
       <div role="radiogroup" aria-label={exercise.instruction} className="grid gap-2 md:gap-3">
         {exercise.options.map((option, index) => {

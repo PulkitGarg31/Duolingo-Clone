@@ -51,7 +51,7 @@ export function FeedbackBar({ copy, onContinue, onReport }: FeedbackBarProps) {
           <VerdictBadge tone={copy.tone} />
           <div className={cn("min-w-0 flex-1 md:animate-[feedback-in_200ms_cubic-bezier(0,0,.2,1)]", tone.ink)}>
             <div className="flex items-center justify-between gap-3 md:justify-start">
-              <h2 className="text-[22px] leading-[30px] font-extrabold md:text-title">{copy.title}</h2>
+              <h2 className="text-[22px]/[30px] font-extrabold md:text-title">{copy.title}</h2>
               <button
                 type="button"
                 aria-label="Report"

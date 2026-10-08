@@ -25,6 +25,9 @@ export function LostHeart({ size }: { size: number }) {
   );
 }
 
+/** The icon's 32-unit artboard at 30 px draws the heart itself about 25 × 22 px, the header's heart size. */
+const HEART_ICON_SIZE = 30;
+
 /**
  * The lesson's hearts: a red heart and the count. Losing one drops a ghost heart, squashes the icon and
  * rolls the number down; at the last heart the icon keeps pulsing.
@@ -35,9 +38,9 @@ export function HeartsCounter({ hearts }: { hearts: number }) {
     <div role="img" aria-label={`${hearts} hearts`} className="flex min-w-12 shrink-0 items-center justify-end gap-2">
       <span className={cn("relative block", hearts === 1 && "animate-last-heart")}>
         <span key={losses} className={cn("block", losses > 0 && "animate-[heart-squash_300ms_ease-in-out]")}>
-          <HeartIcon size={28} />
+          <HeartIcon size={HEART_ICON_SIZE} />
         </span>
-        {losses > 0 && <LostHeart key={`ghost-${losses}`} size={28} />}
+        {losses > 0 && <LostHeart key={`ghost-${losses}`} size={HEART_ICON_SIZE} />}
       </span>
       <RollingNumber value={hearts} className="text-stat text-heart" />
     </div>

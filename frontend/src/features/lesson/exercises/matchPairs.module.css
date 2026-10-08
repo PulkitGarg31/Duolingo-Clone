@@ -1,5 +1,5 @@
 /*
- * Match-pair verdicts. A correct pair turns green quickly, holds, then from 62 % of 800 ms fades to the
+ * Match-pair verdicts. A correct pair turns green at once, holds, then from 62 % of 800 ms fades to the
  * disabled look and loses its lip. A wrong pair flashes pink and red, then returns to normal. Both end where
  * they stay (forwards), so a matched tile keeps its disabled look.
  */
@@ -13,7 +13,7 @@
 }
 
 @keyframes matched {
-  15%,
+  0%,
   62% {
     background-color: var(--c-correct-bg);
     border-color: var(--c-correct-line);

@@ -28,9 +28,10 @@ export function AnswerBox({ value, onChange, language, specialCharacters, locked
   const field = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    // Phones would pop their keyboard over the exercise; they focus on the first tap instead.
-    if (window.matchMedia("(pointer: fine)").matches) field.current?.focus({ preventScroll: true });
-  }, []);
+    // Phones would pop their keyboard over the exercise; they focus on the first tap instead. A locked box
+    // leaves the focus where it is: on CONTINUE once the answer is checked.
+    if (!locked && window.matchMedia("(pointer: fine)").matches) field.current?.focus({ preventScroll: true });
+  }, [locked]);
 
   function insert(character: string) {
     const element = field.current;

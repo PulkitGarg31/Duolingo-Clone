@@ -11,7 +11,7 @@ import type { ExerciseViewProps } from "./types";
 export function TypeAnswer({ exercise, draft, onDraft, locked, hintsEnabled, audio }: ExerciseViewProps<TypeAnswerExercise>) {
   useExerciseKeys({ mode: "typing" });
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4 md:gap-6">
       <PromptBubble exerciseId={exercise.id} prompt={exercise.prompt} audio={audio} hintsEnabled={hintsEnabled} />
       <AnswerBox
         value={draft?.type === "type_answer" ? draft.text : ""}

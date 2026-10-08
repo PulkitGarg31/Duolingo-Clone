@@ -38,13 +38,15 @@ export function TimedClock({ expiresAt, onTimeUp, bonus }: TimedClockProps) {
       </span>
       <span>{formatClock(seconds)}</span>
       {bonus && (
+        // It rises into the clock it was added to: the header has little room above the clock, so a "+5s"
+        // drifting upwards from there would leave the screen.
         <motion.span
           key={bonus.key}
           aria-hidden="true"
           initial={{ opacity: 1, y: 0 }}
           animate={{ opacity: 0, y: -20 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
-          className="pointer-events-none absolute right-0 bottom-full text-[15px] font-black text-beetle"
+          className="pointer-events-none absolute top-full right-0 text-[15px] leading-5 font-black text-beetle"
         >
           +{bonus.seconds}s
         </motion.span>

@@ -13,6 +13,9 @@ export interface Checkpoint {
   reached: boolean;
 }
 
+/** Half of the 24 px checkpoint circle. */
+const CHECKPOINT_RADIUS = 12;
+
 const CHECKPOINT_STYLES: Partial<Record<ProgressTone, { idle: string; reached: string }>> = {
   gold: { idle: "border-gold bg-page text-(--unit-gold-dark)", reached: "border-gold bg-gold text-(--unit-gold-dark)" },
   beetle: { idle: "border-beetle bg-page text-beetle", reached: "border-beetle bg-beetle text-on-color-fixed" },
@@ -42,7 +45,8 @@ export function LessonProgressBar({ value, tone, combo, showCombo, checkpoints }
         checkpoints.map((checkpoint) => (
           <span
             key={checkpoint.label}
-            style={{ left: `${checkpoint.at * 100}%` }}
+            // Kept inside the bar's ends, so a circle at 100 % never crowds the hearts beside the bar.
+            style={{ left: `clamp(${CHECKPOINT_RADIUS}px, ${checkpoint.at * 100}%, calc(100% - ${CHECKPOINT_RADIUS}px))` }}
             className={cn(
               "absolute top-1/2 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 text-[12px] leading-none font-black",
               checkpoint.reached ? cn(styles.reached, "animate-pop-in") : styles.idle,

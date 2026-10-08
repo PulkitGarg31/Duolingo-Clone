@@ -11,8 +11,15 @@ interface RaysProps {
   className?: string;
 }
 
-/** Slowly turning light rays behind a trophy or a badge. */
+/**
+ * Slowly turning light rays behind a trophy or a badge. The rays fade out inside the box's inscribed circle,
+ * so clipping to that circle hides nothing, and it keeps the turning square's corners from widening the page.
+ */
 export function Rays({ color, optional = false, className }: RaysProps) {
   const style: CSSProperties & Record<"--ray-color", string> = { "--ray-color": color };
-  return <div aria-hidden="true" className={cn(styles.rays, optional && styles.optional, className)} style={style} />;
+  return (
+    <div aria-hidden="true" className={cn("overflow-hidden rounded-full", optional && styles.optional, className)}>
+      <div className={cn("size-full", styles.rays)} style={style} />
+    </div>
+  );
 }
