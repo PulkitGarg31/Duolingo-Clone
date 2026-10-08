@@ -103,6 +103,9 @@
   --shadow-sheet:0 -4px 12px rgb(0 0 0 / .45);
 }
 
-html { font-family: var(--font-sans); background: var(--c-bg); color: var(--c-fg);
-       -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-button, input, textarea, select { font: inherit; }
+/* In the base layer so that Tailwind's utility classes (text-*, font-*, leading-*) still win. */
+@layer base {
+  html { font-family: var(--font-sans); background: var(--c-bg); color: var(--c-fg);
+         -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  button, input, textarea, select { font: inherit; }
+}
