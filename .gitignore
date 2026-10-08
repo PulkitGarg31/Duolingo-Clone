@@ -36,9 +36,13 @@ backend/data/
 # Node / Next.js
 node_modules/
 .next/
+.next-*/
 out/
 coverage/
 *.tsbuildinfo
 next-env.d.ts
 .vercel/
 npm-debug.log*
+
+# Files some tools generate inside projects
+AGENTS.md
