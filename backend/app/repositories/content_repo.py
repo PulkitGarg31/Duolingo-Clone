@@ -90,6 +90,21 @@ def node_exercises(db: Session, node_id: int) -> list[Exercise]:
     )
 
 
+def course_exercises(db: Session, course_id: int) -> list[Exercise]:
+    """Every exercise of a course with its options, answers and pairs: the course's written vocabulary."""
+    return list(
+        db.scalars(
+            select(Exercise)
+            .join(Exercise.lesson)
+            .join(Lesson.node)
+            .join(PathNode.unit)
+            .where(Unit.course_id == course_id)
+            .order_by(Exercise.id)
+            .options(*EXERCISE_CHILDREN)
+        )
+    )
+
+
 def exercises_in_lessons(db: Session, lesson_ids: Collection[int]) -> list[Exercise]:
     """The exercises of the given lessons, by id: the practice and timed-practice pools."""
     if not lesson_ids:

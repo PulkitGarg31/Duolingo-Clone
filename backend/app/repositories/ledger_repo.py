@@ -13,14 +13,14 @@ from sqlalchemy.orm import Session
 from app.domain.enums import ActivityKind, GemReason, XpReason
 from app.models import ActivityDay, GemTransaction, LessonSession, Purchase, XpEvent
 
-_LESSON_REASONS = (XpReason.LESSON, XpReason.REVIEW)
-
 
 @dataclass(frozen=True)
-class LessonFact:
-    """A completed lesson or unit review that earned XP on some day, with its completion snapshot."""
+class XpLineFact:
+    """One XP line earned on some day, with the completion snapshot of the session that earned it."""
 
     session_id: int
+    reason: XpReason
+    amount: int
     mistakes: int
     best_combo: int
 
@@ -32,12 +32,9 @@ def total_xp(db: Session, user_id: int) -> int:
     return _sum_xp(db, XpEvent.user_id == user_id)
 
 
-def xp_on(db: Session, user_id: int, day: date, *, reason: XpReason | None = None) -> int:
-    """XP earned on one local day, optionally only the lines of one reason (e.g. combo bonuses)."""
-    terms: list[ColumnElement[bool]] = [XpEvent.user_id == user_id, XpEvent.local_date == day]
-    if reason is not None:
-        terms.append(XpEvent.reason == reason)
-    return _sum_xp(db, *terms)
+def xp_on(db: Session, user_id: int, day: date) -> int:
+    """XP earned on one local day: the daily goal's progress."""
+    return _sum_xp(db, XpEvent.user_id == user_id, XpEvent.local_date == day)
 
 
 def xp_between(db: Session, user_id: int, start: datetime, end: datetime) -> int:
@@ -55,18 +52,22 @@ def xp_by_day(db: Session, user_id: int, first: date, last: date) -> dict[date, 
     return {day: amount for day, amount in rows}
 
 
-def lesson_facts_on(db: Session, user_id: int, day: date) -> list[LessonFact]:
-    """The lessons and reviews that earned XP on a local day: what the lesson quests count."""
-    earned_lesson_xp = select(XpEvent.session_id).where(
-        XpEvent.user_id == user_id, XpEvent.local_date == day, XpEvent.reason.in_(_LESSON_REASONS)
-    )
+def xp_lines_on(db: Session, user_id: int, day: date) -> list[XpLineFact]:
+    """Every XP line earned on a local day, oldest first: what the daily quests are measured on."""
     rows = db.execute(
-        select(LessonSession.id, LessonSession.mistakes, LessonSession.best_combo)
-        .where(LessonSession.id.in_(earned_lesson_xp))
-        .order_by(LessonSession.id)
+        select(
+            XpEvent.session_id,
+            XpEvent.reason,
+            XpEvent.amount,
+            LessonSession.mistakes,
+            LessonSession.best_combo,
+        )
+        .join(LessonSession, LessonSession.id == XpEvent.session_id)
+        .where(XpEvent.user_id == user_id, XpEvent.local_date == day)
+        .order_by(XpEvent.id)
     )
     # Only completed sessions earn XP, and the completion statement writes both snapshots.
-    return [LessonFact(session_id, mistakes, best_combo) for session_id, mistakes, best_combo in rows]
+    return [XpLineFact(*row) for row in rows]
 
 
 def _sum_xp(db: Session, *terms: ColumnElement[bool]) -> int:
