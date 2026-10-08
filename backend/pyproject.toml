@@ -1,0 +1,14 @@
+# Tool configuration for the FastAPI backend. Dependencies are pinned in requirements*.txt.
+
+[tool.ruff]
+target-version = "py312"
+line-length = 110
+
+[tool.ruff.lint]
+# DTZ flags naive datetimes: every instant in the app is timezone-aware UTC.
+select = ["E", "F", "I", "B", "UP", "DTZ", "SIM"]
+
+[tool.pytest.ini_options]
+# No "-q" in addopts: CI and the docs already run `pytest -q`, and a doubled -q hides the result line.
+testpaths = ["tests"]
+pythonpath = ["."]
