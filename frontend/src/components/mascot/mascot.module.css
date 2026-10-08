@@ -1,0 +1,327 @@
+/*
+ * Mascot and cast motion. SVG lengths are in drawing units.
+ * Every animation stops under reduced motion, leaving the pose drawn still, and pauses while off-screen.
+ */
+
+.root[data-offscreen] * {
+  animation-play-state: paused;
+}
+
+:global(html[data-motion="reduced"]) .root *,
+:global(html[data-motion="reduced"]) .talk {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(html:not([data-motion])) .root *,
+  :global(html:not([data-motion])) .talk {
+    animation: none;
+  }
+}
+
+/* ---------- whole body: everything except the ground shadow ---------- */
+
+/* Scale and rotate around the point between the feet. */
+.body {
+  transform-box: view-box;
+  transform-origin: 100px 194px;
+}
+
+.bob {
+  animation: bob 2s ease-in-out infinite;
+}
+
+/* Two jumps with a squash on each landing, then the idle bob. */
+.jump {
+  animation:
+    jump 600ms 2,
+    bob 2s ease-in-out 1.2s infinite;
+}
+
+/* A quick hop on entering, then the idle bob. */
+.hop {
+  animation:
+    hop 400ms ease-out,
+    bob 2s ease-in-out 400ms infinite;
+}
+
+/* Slumps 4 units over 400 ms, then stays still. */
+.droop {
+  transform: translateY(4px) scaleY(0.96);
+  animation: droop 400ms ease-out;
+}
+
+.tilt {
+  transform: rotate(6deg);
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes jump {
+  0% {
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
+  40% {
+    transform: translateY(-24px);
+    animation-timing-function: ease-in;
+  }
+  80% {
+    transform: translateY(0) scaleY(0.92);
+    animation-timing-function: ease-out;
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes hop {
+  0%,
+  100% {
+    transform: none;
+  }
+  45% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes droop {
+  from {
+    transform: none;
+  }
+}
+
+/* ---------- the shadow follows the body: smaller while the owl is up ---------- */
+
+.shadow {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.shadowBob {
+  animation: shadow-bob 2s ease-in-out infinite;
+}
+
+.shadowJump {
+  animation:
+    shadow-jump 600ms 2,
+    shadow-bob 2s ease-in-out 1.2s infinite;
+}
+
+.shadowHop {
+  animation:
+    shadow-hop 400ms ease-out,
+    shadow-bob 2s ease-in-out 400ms infinite;
+}
+
+@keyframes shadow-bob {
+  50% {
+    transform: scaleX(0.92);
+  }
+}
+
+@keyframes shadow-jump {
+  40% {
+    transform: scaleX(0.7);
+    opacity: 0.6;
+  }
+}
+
+@keyframes shadow-hop {
+  45% {
+    transform: scaleX(0.82);
+  }
+}
+
+/* ---------- face ---------- */
+
+/* A 140 ms blink every 5 s, squashing the eyes towards their centre line. */
+.blink {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: blink 5s infinite;
+}
+
+@keyframes blink {
+  0%,
+  96%,
+  100% {
+    transform: scaleY(1);
+  }
+  98% {
+    transform: scaleY(0.1);
+  }
+}
+
+/* The open mouth shows for 150 ms, then hides for 150 ms, while speech plays. */
+.talk {
+  opacity: 0;
+  animation: talk 300ms steps(1, end) infinite;
+}
+
+@keyframes talk {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ---------- wings: rotate around the shoulder (the group's origin) ---------- */
+
+.wave {
+  animation: wave 600ms ease-in-out infinite;
+}
+
+/* Flaps ±20° every 150 ms while the owl jumps. */
+.flap {
+  animation: flap 300ms ease-in-out 4;
+}
+
+@keyframes wave {
+  0%,
+  100% {
+    transform: rotate(-20deg);
+  }
+  50% {
+    transform: rotate(10deg);
+  }
+}
+
+@keyframes flap {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-20deg);
+  }
+  75% {
+    transform: rotate(20deg);
+  }
+}
+
+/* ---------- accessories ---------- */
+
+.thinkDot {
+  animation: think-dot 1.2s ease-in-out infinite;
+}
+
+.thinkDot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinkDot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes think-dot {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+/* Each "z" rises and fades over 2.4 s; negative delays stagger them 0.6 s apart from the first frame. */
+.sleepZ {
+  animation: sleep-z 2.4s ease-out infinite;
+}
+
+.sleepZ:nth-child(2) {
+  animation-delay: -1.8s;
+}
+
+.sleepZ:nth-child(3) {
+  animation-delay: -1.2s;
+}
+
+@keyframes sleep-z {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-24px);
+  }
+}
+
+.questionBob {
+  animation: bob 1.6s ease-in-out infinite;
+}
+
+/* Each sparkle sets its own animation-delay so they twinkle out of step. */
+.twinkle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: twinkle 1.6s ease-in-out infinite;
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.5);
+    opacity: 0.4;
+  }
+}
+
+.wrenchTap {
+  animation: wrench-tap 800ms ease-in-out infinite;
+}
+
+@keyframes wrench-tap {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  50% {
+    transform: rotate(-15deg);
+  }
+}
+
+/* The cape sways from the shoulders. */
+.capeFlutter {
+  transform-box: view-box;
+  transform-origin: 100px 100px;
+  animation: cape-flutter 1.2s ease-in-out infinite;
+}
+
+@keyframes cape-flutter {
+  0%,
+  100% {
+    transform: skewX(-4deg);
+  }
+  50% {
+    transform: skewX(4deg);
+  }
+}
+
+/* One tick every half second. */
+.stopwatchHand {
+  animation: stopwatch-tick 6s steps(12) infinite;
+}
+
+@keyframes stopwatch-tick {
+  to {
+    transform: rotate(360deg);
+  }
+}
