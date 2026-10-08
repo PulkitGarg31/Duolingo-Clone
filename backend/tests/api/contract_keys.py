@@ -174,6 +174,132 @@ RECEIPT_KEYS: dict[str, frozenset[str]] = {"CompletionReceipt": INTERFACE_KEYS["
 
 CONTRACT_KEYS: dict[str, frozenset[str]] = {**INTERFACE_KEYS, **INLINE_OBJECT_KEYS, **RECEIPT_KEYS}
 
+# The bodies a client sends; every other object of the contract is something the API answers with.
+REQUEST_BODIES: frozenset[str] = names(
+    "StartSessionIn SettingsPatchIn PurchaseIn ClockAdvanceIn DevLearnerPatchIn MatchPairIn"
+    " MultipleChoiceAnswer FillBlankAnswer TranslateAnswer MatchPairsAnswer TypeAnswerAnswer SkipAnswer"
+    " CantListenAnswer"
+)
+
+# The fields that hold another object of the contract, by the type they hold. "X[]" is an array of X,
+# and a union (ExerciseOut) is resolved by its `type`. A field typed `X | null` is listed as X.
+OBJECT_FIELDS: dict[str, dict[str, str]] = {
+    # ---- /me ----
+    "MeOut": {
+        "user": "MeUser",
+        "course": "CourseBrief",
+        "xp": "MeXp",
+        "hearts": "HeartsOut",
+        "streak": "MeStreak",
+        "dailyGoal": "DailyGoalOut",
+        "league": "MeLeague",
+        "xpBoost": "XpBoostOut",
+        "activeSession": "ActiveSessionRef",
+        "pendingLeagueResult": "LeagueResultOut",
+        "settings": "SettingsOut",
+        "dev": "DevInfo",
+    },
+    "LeagueResultOut": {"league": "LeagueBrief", "newLeague": "LeagueBrief"},
+    "ActivityOut": {"items": "ActivityDayOut[]"},
+    # ---- path and content ----
+    "PathOut": {"course": "CourseBrief", "units": "PathUnitOut[]"},
+    "PathUnitOut": {"nodes": "PathNodeOut[]"},
+    "PathNodeOut": {"actions": "PathNodeActions"},
+    "GuidebookOut": {"unit": "GuidebookUnitRef", "keyPhrases": "KeyPhraseOut[]"},
+    "CoursesOut": {"items": "CourseBrief[]"},
+    # ---- league, quests, shop, profile ----
+    "LeagueOut": {
+        "league": "LeagueBrief",
+        "tiers": "LeagueTierOut[]",
+        "rows": "LeagueRowOut[]",
+        "lastWeekResult": "LeagueResultOut",
+    },
+    "QuestsOut": {"quests": "QuestOut[]"},
+    "ShopOut": {"items": "ShopItemOut[]"},
+    "PurchaseEffect": {"hearts": "HeartsOut"},
+    "PurchaseOut": {"effect": "PurchaseEffect"},
+    "AchievementOut": {"tiers": "AchievementTierOut[]"},
+    "ProfileStats": {"league": "LeagueBrief"},
+    "ProfileOut": {"user": "ProfileUser", "stats": "ProfileStats", "achievements": "AchievementOut[]"},
+    # ---- sessions ----
+    "PromptOut": {"segments": "PromptSegment[]"},
+    "MultipleChoiceExercise": {"prompt": "PromptOut", "options": "ChoiceOptionOut[]"},
+    "TranslateExercise": {"prompt": "PromptOut", "tiles": "TokenOut[]"},
+    "MatchPairsExercise": {"left": "TokenOut[]", "right": "TokenOut[]"},
+    "FillBlankExercise": {"prompt": "PromptOut", "options": "TokenOut[]"},
+    "TypeAnswerExercise": {"prompt": "PromptOut"},
+    "SessionItemOut": {"exercise": "ExerciseOut"},
+    "SessionOut": {
+        "node": "SessionNodeRef",
+        "lesson": "SessionLessonRef",
+        "rules": "SessionRules",
+        "timer": "TimerOut",
+        "hearts": "HeartsOut",
+        "lives": "LivesOut",
+        "progress": "ProgressOut",
+        "items": "SessionItemOut[]",
+    },
+    "AnswerResultOut": {
+        "hearts": "HeartsOut",
+        "progress": "ProgressOut",
+        "appendedItem": "SessionItemOut",
+        "session": "SessionStateOut",
+    },
+    "CompletionXp": {"lines": "XpLineOut[]"},
+    "CompletionStreak": {"week": "StreakDayOut[]"},
+    "CompletionLeague": {"league": "LeagueBrief"},
+    "CompletionOut": {
+        "xp": "CompletionXp",
+        "stats": "CompletionStats",
+        "streak": "CompletionStreak",
+        "dailyGoal": "CompletionDailyGoal",
+        "node": "CompletionNode",
+        "questsCompleted": "QuestCompletedOut[]",
+        "achievementsUnlocked": "AchievementUnlockOut[]",
+        "league": "CompletionLeague",
+        "timed": "TimedResultOut",
+        "me": "MeOut",
+    },
+    "QuitOut": {"hearts": "HeartsOut"},
+    # ---- dev tools ----
+    "SyncEffectsOut": {"streak": "SyncStreakOut", "leagueResults": "LeagueResultOut[]"},
+    "ClockChangeOut": {"clock": "ClockOut", "effects": "SyncEffectsOut"},
+    "DevResetOut": {"me": "MeOut"},
+    # ---- errors ----
+    "ProblemDetails": {"errors": "FieldError[]"},
+}
+
+# Every endpoint (A.1): its operation id, method, path under /api/v1 and the type of its success body.
+ENDPOINTS: dict[str, tuple[str, str, str]] = {
+    "getHealth": ("GET", "/health", "HealthOut"),
+    "getMe": ("GET", "/me", "MeOut"),
+    "getSettings": ("GET", "/me/settings", "SettingsOut"),
+    "updateSettings": ("PATCH", "/me/settings", "SettingsUpdateOut"),
+    "getActivity": ("GET", "/me/activity", "ActivityOut"),
+    "getPath": ("GET", "/me/path", "PathOut"),
+    "claimChest": ("POST", "/me/chests/{node_id}/claim", "ChestClaimOut"),
+    "getLeague": ("GET", "/me/league", "LeagueOut"),
+    "ackLeagueResult": ("POST", "/me/league/results/{membership_id}/ack", "LeagueAckOut"),
+    "getQuests": ("GET", "/me/quests", "QuestsOut"),
+    "createPurchase": ("POST", "/me/purchases", "PurchaseOut"),
+    "getPurchase": ("GET", "/me/purchases/{purchase_id}", "PurchaseOut"),
+    "getProfile": ("GET", "/users/{user_id}/profile", "ProfileOut"),
+    "listCourses": ("GET", "/courses", "CoursesOut"),
+    "getGuidebook": ("GET", "/units/{unit_id}/guidebook", "GuidebookOut"),
+    "listShopItems": ("GET", "/shop/items", "ShopOut"),
+    "startSession": ("POST", "/sessions", "SessionOut"),
+    "getSession": ("GET", "/sessions/{session_id}", "SessionOut"),
+    "submitAnswer": ("PUT", "/sessions/{session_id}/items/{item_id}/answer", "AnswerResultOut"),
+    "completeSession": ("POST", "/sessions/{session_id}/complete", "CompletionOut"),
+    "quitSession": ("POST", "/sessions/{session_id}/quit", "QuitOut"),
+    "getDevClock": ("GET", "/dev/clock", "ClockOut"),
+    "advanceDevClock": ("POST", "/dev/clock/advance", "ClockChangeOut"),
+    "devNextDay": ("POST", "/dev/clock/next-day", "ClockChangeOut"),
+    "devNextWeek": ("POST", "/dev/clock/next-week", "ClockChangeOut"),
+    "patchDevLearner": ("PATCH", "/dev/learner", "MeOut"),
+    "resetDemo": ("POST", "/dev/reset", "DevResetOut"),
+}
+
 # The discriminated unions: each `type` value and the schema that carries it.
 DISCRIMINATED_UNIONS: dict[str, dict[str, str]] = {
     "ExerciseOut": {

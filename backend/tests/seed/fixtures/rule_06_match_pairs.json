@@ -1,0 +1,31 @@
+{
+  "rule": "match_pairs: 3 to 5 pairs, unique on both sides.",
+  "cases": [
+    {
+      "name": "two-pairs",
+      "patch": [
+        { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/2/pairs/3" },
+        { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/2/pairs/2" }
+      ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[2] › match_pairs: needs 3 to 5 pairs, has 2"
+    },
+    {
+      "name": "six-pairs",
+      "patch": [
+        { "op": "add", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/2/pairs/4", "value": [ "sí", "yes" ] },
+        { "op": "add", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/2/pairs/5", "value": [ "no", "no" ] }
+      ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[2] › match_pairs: needs 3 to 5 pairs, has 6"
+    },
+    {
+      "name": "repeated-left-side",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/2/pairs/1/0", "value": "hola" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[2] › match_pairs: left sides repeat: hola"
+    },
+    {
+      "name": "repeated-right-side",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/2/pairs/1/1", "value": "Hello" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[2] › match_pairs: right sides repeat: hello"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "rule": "Guidebook tips use only '## ' headings, paragraphs, **bold**, '- ' bullets and '> ' callouts: no tables, links, images or HTML.",
+  "cases": [
+    {
+      "name": "link",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/guidebook/tipsMd", "value": "## Tips\n\nRead [this](https://example.com) first." } ],
+      "expect": "unit-1.json › guidebook › tipsMd: line 3: links and images are not supported"
+    },
+    {
+      "name": "image",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/guidebook/tipsMd", "value": "![owl](owl.png)" } ],
+      "expect": "unit-1.json › guidebook › tipsMd: line 1: links and images are not supported"
+    },
+    {
+      "name": "table",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/guidebook/tipsMd", "value": "| word | meaning |\n| --- | --- |" } ],
+      "expect": "unit-1.json › guidebook › tipsMd: line 1: tables are not supported"
+    },
+    {
+      "name": "html",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/guidebook/tipsMd", "value": "Say <b>hola</b>." } ],
+      "expect": "unit-1.json › guidebook › tipsMd: line 1: HTML is not supported"
+    },
+    {
+      "name": "level-3-heading",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/guidebook/tipsMd", "value": "### Greetings" } ],
+      "expect": "unit-1.json › guidebook › tipsMd: line 1: headings must be level 2 ('## ')"
+    },
+    {
+      "name": "italic",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/guidebook/tipsMd", "value": "Say *hola* to friends." } ],
+      "expect": "unit-1.json › guidebook › tipsMd: line 1: only balanced **bold** emphasis is supported"
+    },
+    {
+      "name": "numbered-list",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/guidebook/tipsMd", "value": "1. hola\n2. adiós" } ],
+      "expect": "unit-1.json › guidebook › tipsMd: line 1: numbered lists are not supported, use '- ' bullets"
+    }
+  ]
+}

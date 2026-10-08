@@ -1,0 +1,48 @@
+{
+  "rule": "multiple_choice: 3 to 4 options, exactly one correct, unique option texts, an image on all options or none, and every image a registered picture key.",
+  "cases": [
+    {
+      "name": "two-options",
+      "patch": [ { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/0/options/2" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[0] › multiple_choice: needs 3 to 4 options, has 2"
+    },
+    {
+      "name": "five-options",
+      "patch": [
+        { "op": "add", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/0/options/3", "value": { "text": "sí", "image": "sun" } },
+        { "op": "add", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/0/options/4", "value": { "text": "no", "image": "moon" } }
+      ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[0] › multiple_choice: needs 3 to 4 options, has 5"
+    },
+    {
+      "name": "two-correct-options",
+      "patch": [ { "op": "add", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/0/options/1/correct", "value": true } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[0] › multiple_choice: needs exactly one correct option, has 2"
+    },
+    {
+      "name": "no-correct-option",
+      "patch": [ { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/0/options/0/correct" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[0] › multiple_choice: needs exactly one correct option, has 0"
+    },
+    {
+      "name": "repeated-option-text",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/0/options/1/text", "value": "Hola" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[0] › multiple_choice: option texts repeat: hola"
+    },
+    {
+      "name": "image-on-some-options",
+      "patch": [ { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/0/options/2/image" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[0] › multiple_choice: give every option an image, or none"
+    },
+    {
+      "name": "unknown-picture-key",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/0/options/1/image", "value": "unicorn" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[0] › multiple_choice: unknown picture keys: unicorn"
+    },
+    {
+      "name": "sentence-without-language",
+      "patch": [ { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/2/exercises/0/lang" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[2] › exercises[0] › multiple_choice: text and lang go together"
+    }
+  ]
+}

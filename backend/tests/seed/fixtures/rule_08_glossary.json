@@ -1,0 +1,20 @@
+{
+  "rule": "Glossary terms are written normalized, are unique in their course, and each names an existing node.",
+  "cases": [
+    {
+      "name": "term-not-normalized",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/glossary/0/term", "value": "¡Hola!" } ],
+      "expect": "unit-1.json › glossary[0] › term: write it normalized, as 'hola'"
+    },
+    {
+      "name": "term-defined-twice-in-the-course",
+      "patch": [ { "op": "replace", "file": "unit-2.json", "path": "/glossary/0/term", "value": "hola" } ],
+      "expect": "unit-2.json › glossary[0] › term: 'hola' is already defined at unit-1.json › glossary[0]"
+    },
+    {
+      "name": "unknown-node",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/glossary/0/node", "value": "u9.nowhere" } ],
+      "expect": "unit-1.json › glossary[0] › node: there is no node 'u9.nowhere' in this course"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "rule": "type_answer: at least one accepted answer and none equal once normalized. audioOnly needs lang es and a translation, and its answers must normalize to the spoken text.",
+  "cases": [
+    {
+      "name": "no-answers",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/5/answers", "value": [] } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[5] › type_answer: needs at least one accepted answer"
+    },
+    {
+      "name": "answers-equal-once-normalized",
+      "patch": [ { "op": "add", "file": "unit-1.json", "path": "/nodes/0/lessons/2/exercises/5/answers/2", "value": "muy bien y tú" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[2] › exercises[5] › type_answer: accepted answers (after normalization) repeat: muy bien y tú"
+    },
+    {
+      "name": "listening-in-english",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/1/exercises/5/lang", "value": "en" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[1] › exercises[5] › type_answer: a listening exercise speaks Spanish: lang must be es"
+    },
+    {
+      "name": "listening-without-translation",
+      "patch": [ { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/1/exercises/5/translation" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[1] › exercises[5] › type_answer: a listening exercise needs a translation"
+    },
+    {
+      "name": "listening-answer-differs-from-the-audio",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/1/exercises/5/answers/0", "value": "Sí, gracias." } ],
+      "expect": "unit-1.json › nodes[0] › lessons[1] › exercises[5] › type_answer: a listening exercise only accepts its own text, not: Sí, gracias."
+    }
+  ]
+}

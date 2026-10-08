@@ -1,0 +1,37 @@
+{
+  "rule": "Every lesson has at least 4 different exercise types. A lesson has 5 to 8 exercises; a review lesson has exactly 8.",
+  "cases": [
+    {
+      "name": "three-exercise-types",
+      "patch": [
+        { "op": "copy", "file": "unit-1.json", "from": "/nodes/0/lessons/0/exercises/0", "path": "/nodes/0/lessons/0/exercises/5" },
+        { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/6" },
+        { "op": "copy", "file": "unit-1.json", "from": "/nodes/0/lessons/0/exercises/2", "path": "/nodes/0/lessons/0/exercises/3" },
+        { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/4" }
+      ],
+      "expect": "unit-1.json › nodes[0] › lessons[0]: needs at least 4 different exercise types, has 3"
+    },
+    {
+      "name": "four-exercises",
+      "patch": [
+        { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/5" },
+        { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/4" }
+      ],
+      "expect": "unit-1.json › nodes[0] › lessons[0]: needs 5 to 8 exercises, has 4"
+    },
+    {
+      "name": "nine-exercises",
+      "patch": [
+        { "op": "copy", "file": "unit-1.json", "from": "/nodes/0/lessons/0/exercises/1", "path": "/nodes/0/lessons/0/exercises/6" },
+        { "op": "copy", "file": "unit-1.json", "from": "/nodes/0/lessons/0/exercises/2", "path": "/nodes/0/lessons/0/exercises/7" },
+        { "op": "copy", "file": "unit-1.json", "from": "/nodes/0/lessons/0/exercises/3", "path": "/nodes/0/lessons/0/exercises/8" }
+      ],
+      "expect": "unit-1.json › nodes[0] › lessons[0]: needs 5 to 8 exercises, has 9"
+    },
+    {
+      "name": "review-with-seven-exercises",
+      "patch": [ { "op": "remove", "file": "unit-1.json", "path": "/nodes/3/lessons/0/exercises/7" } ],
+      "expect": "unit-1.json › nodes[3]: a review lesson has exactly 8 exercises"
+    }
+  ]
+}

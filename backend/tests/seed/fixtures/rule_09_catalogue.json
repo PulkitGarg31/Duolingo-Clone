@@ -1,0 +1,65 @@
+{
+  "rule": "Catalogue: league tiers are exactly 1 to 10 and match the game's league table (Bronze never demotes, Diamond never promotes); achievement thresholds strictly increase with the level; slot 1 holds the single daily-goal quest; the shop sells heart_refill and streak_freeze.",
+  "cases": [
+    {
+      "name": "nine-league-tiers",
+      "patch": [ { "op": "remove", "file": "catalog.json", "path": "/leagues/9" } ],
+      "expect": "catalog.json › leagues: league tiers must be exactly 1 to 10, in order"
+    },
+    {
+      "name": "bronze-demotes",
+      "patch": [ { "op": "replace", "file": "catalog.json", "path": "/leagues/0/demoteCount", "value": 3 } ],
+      "expect": "catalog.json › leagues: tier 1 must be Bronze (promote 20, demote 0)"
+    },
+    {
+      "name": "diamond-promotes",
+      "patch": [ { "op": "replace", "file": "catalog.json", "path": "/leagues/9/promoteCount", "value": 5 } ],
+      "expect": "catalog.json › leagues: tier 10 must be Diamond (promote 0, demote 5)"
+    },
+    {
+      "name": "thresholds-not-increasing",
+      "patch": [ { "op": "replace", "file": "catalog.json", "path": "/achievements/0/tiers/2/threshold", "value": 7 } ],
+      "expect": "catalog.json › achievements[0]: tier thresholds must strictly increase with the level"
+    },
+    {
+      "name": "levels-out-of-order",
+      "patch": [ { "op": "replace", "file": "catalog.json", "path": "/achievements/5/tiers/0/level", "value": 2 } ],
+      "expect": "catalog.json › achievements[5]: tier levels must run 1, 2, 3... in order"
+    },
+    {
+      "name": "two-quests-in-slot-1",
+      "patch": [ { "op": "replace", "file": "catalog.json", "path": "/quests/1/slot", "value": 1 } ],
+      "expect": "catalog.json › quests: slot 1 holds exactly one quest, the only daily_goal_xp quest"
+    },
+    {
+      "name": "daily-goal-outside-slot-1",
+      "patch": [ { "op": "replace", "file": "catalog.json", "path": "/quests/0/slot", "value": 2 } ],
+      "expect": "catalog.json › quests: slot 1 holds exactly one quest, the only daily_goal_xp quest"
+    },
+    {
+      "name": "daily-goal-with-a-target",
+      "patch": [ { "op": "replace", "file": "catalog.json", "path": "/quests/0/target", "value": 20 } ],
+      "expect": "catalog.json › quests[0]: the daily-goal quest has no target, and every other quest has one"
+    },
+    {
+      "name": "unknown-title-placeholder",
+      "patch": [ { "op": "replace", "file": "catalog.json", "path": "/quests/1/titleTemplate", "value": "Complete {count} lessons" } ],
+      "expect": "catalog.json › quests[1]: titleTemplate may only use the {n} placeholder"
+    },
+    {
+      "name": "shop-without-streak-freeze",
+      "patch": [ { "op": "remove", "file": "catalog.json", "path": "/shopItems/2" } ],
+      "expect": "catalog.json › shopItems: the shop must sell streak_freeze"
+    },
+    {
+      "name": "shop-without-heart-refill",
+      "patch": [ { "op": "remove", "file": "catalog.json", "path": "/shopItems/0" } ],
+      "expect": "catalog.json › shopItems: the shop must sell heart_refill"
+    },
+    {
+      "name": "boost-without-duration",
+      "patch": [ { "op": "remove", "file": "catalog.json", "path": "/shopItems/3/durationMinutes" } ],
+      "expect": "catalog.json › shopItems[3]: an XP boost has durationMinutes, and no other item does"
+    }
+  ]
+}

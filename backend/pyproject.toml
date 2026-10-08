@@ -12,3 +12,6 @@ select = ["E", "F", "I", "B", "UP", "DTZ", "SIM"]
 # No "-q" in addopts: CI and the docs already run `pytest -q`, and a doubled -q hides the result line.
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "zone_shifted: the test changes a learner's time zone; day snapshots are not compared with today",
+]

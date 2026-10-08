@@ -1,0 +1,43 @@
+{
+  "rule": "Users: one learner named after the default username and exactly 35 bots; usernames unique and lower-case; avatar colours #RRGGBB; exactly 16 light (4 to 10 XP a day), 13 medium (20 to 45) and 6 heavy (60 to 110) bots.",
+  "cases": [
+    {
+      "name": "learner-is-not-the-default-user",
+      "patch": [ { "op": "replace", "file": "users.json", "path": "/learner/username", "value": "sam" } ],
+      "expect": "users.json › learner › username: must be 'alex', the default learner"
+    },
+    {
+      "name": "thirty-four-bots",
+      "patch": [ { "op": "remove", "file": "users.json", "path": "/bots/34" } ],
+      "expect": "users.json: needs exactly 35 bots, has 34"
+    },
+    {
+      "name": "username-used-twice",
+      "patch": [ { "op": "replace", "file": "users.json", "path": "/bots/1/username", "value": "kenji_t" } ],
+      "expect": "users.json: usernames repeat: kenji_t"
+    },
+    {
+      "name": "username-with-capitals",
+      "patch": [ { "op": "replace", "file": "users.json", "path": "/bots/0/username", "value": "Kenji_t" } ],
+      "expect": "users.json: usernames must be lower-case: Kenji_t"
+    },
+    {
+      "name": "avatar-colour-not-hex",
+      "patch": [ { "op": "replace", "file": "users.json", "path": "/bots/0/avatarColor", "value": "orange" } ],
+      "expect": "users.json › bots[0] › avatarColor: String should match pattern '^#[0-9A-Fa-f]{6}$'"
+    },
+    {
+      "name": "pace-classes-unbalanced",
+      "patch": [
+        { "op": "replace", "file": "users.json", "path": "/bots/2/pace", "value": "medium" },
+        { "op": "replace", "file": "users.json", "path": "/bots/2/dailyXp", "value": 30 }
+      ],
+      "expect": "users.json: needs exactly 16 light bots, has 15; needs exactly 13 medium bots, has 14"
+    },
+    {
+      "name": "daily-xp-outside-the-pace",
+      "patch": [ { "op": "replace", "file": "users.json", "path": "/bots/2/dailyXp", "value": 12 } ],
+      "expect": "users.json › bots[2]: a light bot earns 4 to 10 XP a day, not 12"
+    }
+  ]
+}

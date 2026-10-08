@@ -1,0 +1,73 @@
+{
+  "rule": "The history script names only existing nodes and shop items, its steps are in chronological order between the join day and yesterday, and every step is one the live start rules allow: a lesson plays the current node's next lesson.",
+  "cases": [
+    {
+      "name": "unknown-node",
+      "patch": [ { "op": "replace", "file": "sample_learner.json", "path": "/steps/0/node", "value": "u9.nowhere" } ],
+      "expect": "sample_learner.json › steps[0]: there is no node 'u9.nowhere' in the learner's course"
+    },
+    {
+      "name": "unknown-shop-item",
+      "patch": [ { "op": "replace", "file": "sample_learner.json", "path": "/steps/12/item", "value": "gem_pack" } ],
+      "expect": "sample_learner.json › steps[12] › purchase › item: Input should be 'heart_refill', 'unlimited_hearts', 'streak_freeze' or 'xp_boost_15'"
+    },
+    {
+      "name": "item-not-for-sale",
+      "patch": [ { "op": "replace", "file": "sample_learner.json", "path": "/steps/12/item", "value": "unlimited_hearts" } ],
+      "expect": "sample_learner.json › steps[12]: the shop doesn't sell unlimited_hearts"
+    },
+    {
+      "name": "steps-out-of-order",
+      "patch": [
+        { "op": "replace", "file": "sample_learner.json", "path": "/steps/2/day", "value": -29 },
+        { "op": "replace", "file": "sample_learner.json", "path": "/steps/2/time", "value": "08:00" }
+      ],
+      "expect": "sample_learner.json: steps[2] must come after the step before it"
+    },
+    {
+      "name": "step-before-joining",
+      "patch": [ { "op": "replace", "file": "sample_learner.json", "path": "/steps/0/time", "value": "09:00" } ],
+      "expect": "sample_learner.json: steps[0] must happen after the learner joined (day -30, noon)"
+    },
+    {
+      "name": "step-on-the-seed-day",
+      "patch": [ { "op": "replace", "file": "sample_learner.json", "path": "/steps/25/day", "value": 0 } ],
+      "expect": "sample_learner.json: steps[25] must happen before the seed day (day -1 or earlier)"
+    },
+    {
+      "name": "lesson-on-a-locked-node",
+      "patch": [ { "op": "replace", "file": "sample_learner.json", "path": "/steps/3/node", "value": "u2.food" } ],
+      "expect": "sample_learner.json › steps[3]: this lesson would be refused with NODE_LOCKED"
+    },
+    {
+      "name": "lesson-on-a-completed-node",
+      "patch": [ { "op": "replace", "file": "sample_learner.json", "path": "/steps/3/node", "value": "u1.hello" } ],
+      "expect": "sample_learner.json › steps[3]: this lesson would be refused with NODE_ALREADY_COMPLETED"
+    },
+    {
+      "name": "chest-not-reachable",
+      "patch": [ { "op": "replace", "file": "sample_learner.json", "path": "/steps/6/node", "value": "u2.chest" } ],
+      "expect": "sample_learner.json › steps[6]: u2.chest is not a reachable chest"
+    },
+    {
+      "name": "practice-before-any-lesson",
+      "patch": [ { "op": "add", "file": "sample_learner.json", "path": "/steps/0", "value": { "day": -30, "time": "18:00", "kind": "practice", "node": null } } ],
+      "expect": "sample_learner.json › steps[0]: this practice would be refused with NOTHING_TO_PRACTICE"
+    },
+    {
+      "name": "purchase-without-enough-gems",
+      "patch": [ { "op": "replace", "file": "sample_learner.json", "path": "/startingGems", "value": 100 } ],
+      "expect": "sample_learner.json › steps[12]: streak_freeze costs 200 gems, the learner has 120"
+    },
+    {
+      "name": "wrong-item-beyond-the-lesson",
+      "patch": [ { "op": "replace", "file": "sample_learner.json", "path": "/steps/0/wrong", "value": [ 7 ] } ],
+      "expect": "sample_learner.json › steps[0] › wrong: the session has at most 6 items, so not [7]"
+    },
+    {
+      "name": "failed-legendary-run",
+      "patch": [ { "op": "replace", "file": "sample_learner.json", "path": "/steps/20/wrong", "value": [ 1, 2, 3 ] } ],
+      "expect": "sample_learner.json › steps[20] › legendary › wrong: a legendary run fails after 2 mistakes"
+    }
+  ]
+}

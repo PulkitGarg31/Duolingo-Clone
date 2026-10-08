@@ -1,0 +1,45 @@
+{
+  "rule": "translate: at least one accepted answer, lang is es or en, no distractor is a word of the primary answer, and the word bank holds 4 to 12 tiles. Accepted answers never repeat once normalized.",
+  "cases": [
+    {
+      "name": "no-answers",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/1/answers", "value": [] } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[1] › translate: needs at least one accepted answer"
+    },
+    {
+      "name": "unsupported-language",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/1/lang", "value": "fr" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[1] › translate › lang: Input should be 'es' or 'en'"
+    },
+    {
+      "name": "distractor-in-the-answer",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/1/distractors/0", "value": "marta" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[1] › translate: distractors must not be words of the primary answer: marta"
+    },
+    {
+      "name": "too-few-tiles",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/1/distractors", "value": [ "please" ] } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[1] › translate: needs 4 to 12 word-bank tiles (answer words and distractors), has 3"
+    },
+    {
+      "name": "too-many-tiles",
+      "patch": [
+        {
+          "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/1/distractors",
+          "value": [ "goodbye", "please", "thanks", "yes", "no", "good", "night", "morning", "very", "well", "and" ]
+        }
+      ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[1] › translate: needs 4 to 12 word-bank tiles (answer words and distractors), has 13"
+    },
+    {
+      "name": "answers-equal-once-normalized",
+      "patch": [ { "op": "add", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/1/answers/2", "value": "hello marta" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[1] › translate: accepted answers (after normalization) repeat: hello marta"
+    },
+    {
+      "name": "contraction-twin",
+      "patch": [ { "op": "add", "file": "unit-1.json", "path": "/nodes/1/lessons/0/exercises/1/answers/2", "value": "Hello, I'm Luis." } ],
+      "expect": "unit-1.json › nodes[1] › lessons[0] › exercises[1] › translate: accepted answers (after normalization) repeat: hello i am luis"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "rule": "fill_blank: the text contains exactly one \"___\", there are 2 to 4 options with exactly one correct, and a translation is given.",
+  "cases": [
+    {
+      "name": "no-blank",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/3/text", "value": "Gracias y adiós, Marta." } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[3] › fill_blank: text must contain exactly one \"___\""
+    },
+    {
+      "name": "two-blanks",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/3/text", "value": "___ y ___, Marta." } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[3] › fill_blank: text must contain exactly one \"___\""
+    },
+    {
+      "name": "one-option",
+      "patch": [
+        { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/3/options/2" },
+        { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/3/options/1" }
+      ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[3] › fill_blank: needs 2 to 4 options, has 1"
+    },
+    {
+      "name": "five-options",
+      "patch": [
+        { "op": "add", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/3/options/3", "value": { "text": "sí" } },
+        { "op": "add", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/3/options/4", "value": { "text": "no" } }
+      ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[3] › fill_blank: needs 2 to 4 options, has 5"
+    },
+    {
+      "name": "two-correct-options",
+      "patch": [ { "op": "add", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/3/options/2/correct", "value": true } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[3] › fill_blank: needs exactly one correct option, has 2"
+    },
+    {
+      "name": "no-translation",
+      "patch": [ { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/0/exercises/3/translation" } ],
+      "expect": "unit-1.json › nodes[0] › lessons[0] › exercises[3] › fill_blank › translation: Field required"
+    }
+  ]
+}

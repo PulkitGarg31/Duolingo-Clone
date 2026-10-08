@@ -1,7 +1,9 @@
 """The wire contract: schema shapes, JSON formats, RFC 9457 problem documents and the standard headers.
 
 Error paths are exercised through probe routes mounted on a real app instance, so every response
-passes through the same middleware, CORS and exception handlers as production traffic.
+passes through the same middleware, CORS and exception handlers as production traffic. A tour of all
+27 endpoints on the seeded demo checks every answer, nested objects included, against the recorded
+contract, and that every instant in it is written in UTC with a "Z".
 """
 
 import importlib
@@ -10,6 +12,7 @@ import logging
 import pkgutil
 import re
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -20,6 +23,7 @@ import pytest
 from fastapi import APIRouter, Depends, FastAPI, Response
 from fastapi.testclient import TestClient
 from pydantic import TypeAdapter, ValidationError
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 import app.schemas
@@ -82,10 +86,19 @@ from app.schemas.quests import QuestSlot
 from app.schemas.sessions import AnswerIn, BlockedReason, SessionOut, StartSessionIn, TimerOut
 from app.schemas.settings import SettingsPatchIn
 from app.schemas.shop import ShopUnavailableReason
-from tests.api.contract_keys import CONTRACT_KEYS, DISCRIMINATED_UNIONS, INTERFACE_KEYS, UNION_VALUES
-from tests.conftest import FROZEN_NOW, TEST_ORIGIN
+from tests.api.contract_keys import (
+    CONTRACT_KEYS,
+    DISCRIMINATED_UNIONS,
+    ENDPOINTS,
+    INLINE_OBJECT_KEYS,
+    INTERFACE_KEYS,
+    OBJECT_FIELDS,
+    REQUEST_BODIES,
+    UNION_VALUES,
+)
+from tests.conftest import FROZEN_NOW, TEST_ORIGIN, assert_invariants_hold, fresh_app, running, use_database
+from tests.helpers import PROBLEM_KEYS, answer_for, assert_problem, load_exercises, use_settings
 
-PROBLEM_KEYS = frozenset({"type", "title", "status", "detail", "instance", "code", "requestId", "errors"})
 HEX_ID = re.compile(r"[0-9a-f]{12}")
 FRONTEND_TYPES = Path(__file__).resolve().parents[3] / "frontend" / "src" / "lib" / "api" / "types.ts"
 
@@ -173,13 +186,26 @@ def cacheable(response: Response) -> dict[str, bool]:
     return {"ok": True}
 
 
+@pytest.fixture(scope="module")
+def probe_client() -> Iterator[TestClient]:
+    """A client of an app of its own with the probe routes mounted, shared by this module's tests."""
+    probe_app = fresh_app()
+    probe_app.include_router(probe)
+    with running(TestClient(probe_app)) as client:
+        yield client
+
+
 @pytest.fixture
-def api(bare_client: TestClient) -> TestClient:
-    """The app on an empty database, with the probe routes mounted."""
-    fastapi_app = bare_client.app
-    assert isinstance(fastapi_app, FastAPI)
-    fastapi_app.include_router(probe)
-    return bare_client
+def api(probe_client: TestClient, engine: Engine, clock: FrozenClock) -> Iterator[TestClient]:
+    """The probe app on an empty database.
+
+    Once the test is over, the invariants must hold on whatever it created.
+    """
+    probe_app = probe_client.app
+    assert isinstance(probe_app, FastAPI)
+    use_database(probe_app, engine, clock)
+    yield probe_client
+    assert_invariants_hold(engine, clock)
 
 
 def client_settings(client: TestClient) -> Settings:
@@ -188,14 +214,6 @@ def client_settings(client: TestClient) -> Settings:
     assert isinstance(fastapi_app, FastAPI)
     settings: Settings = fastapi_app.dependency_overrides[get_settings]()
     return settings
-
-
-def change_settings(client: TestClient, **changes: Any) -> None:
-    """Run the client's app with some settings changed from here on."""
-    fastapi_app = client.app
-    assert isinstance(fastapi_app, FastAPI)
-    changed = client_settings(client).model_copy(update=changes)
-    fastapi_app.dependency_overrides[get_settings] = lambda: changed
 
 
 def add_people(db: Session) -> tuple[int, int]:
@@ -327,22 +345,45 @@ def _top_level_members(body: str) -> list[str]:
     return [member.strip() for member in members if member.strip()]
 
 
-def frontend_interfaces(source: str) -> dict[str, frozenset[str]]:
-    """Each `export interface` with its keys, inherited ones included."""
+def _interfaces(source: str) -> dict[str, tuple[str | None, list[str]]]:
+    """Each `export interface`: the interface it extends, if any, and its own members."""
     declared: dict[str, tuple[str | None, list[str]]] = {}
     for match in re.finditer(r"export interface (\w+)(?: extends (\w+))? \{", source):
         end, depth = match.end(), 1
         while depth:
             depth += {"{": 1, "}": -1}.get(source[end], 0)
             end += 1
-        members = _top_level_members(source[match.end() : end - 1])
-        declared[match.group(1)] = (match.group(2), [re.match(r"\w+", member).group() for member in members])
+        declared[match.group(1)] = (match.group(2), _top_level_members(source[match.end() : end - 1]))
+    return declared
+
+
+def frontend_interfaces(source: str) -> dict[str, frozenset[str]]:
+    """Each `export interface` with its keys, inherited ones included."""
+    declared = _interfaces(source)
 
     def all_keys(name: str) -> frozenset[str]:
-        base, own = declared[name]
-        return frozenset(own) | (all_keys(base) if base else frozenset())
+        base, members = declared[name]
+        own = frozenset(re.match(r"\w+", member).group() for member in members)
+        return own | (all_keys(base) if base else frozenset())
 
     return {name: all_keys(name) for name in declared}
+
+
+def frontend_object_fields(source: str) -> dict[str, dict[str, str]]:
+    """Each interface's own fields typed with a named contract type, written "X" or "X[]".
+
+    `| null` is dropped; inline object types and maps are not named types, so they are left out.
+    """
+    declared = _interfaces(source)
+    named = set(declared) | set(DISCRIMINATED_UNIONS)
+    fields: dict[str, dict[str, str]] = {}
+    for interface, (_, members) in declared.items():
+        for member in members:
+            name, _, type_text = member.partition(":")
+            kind = type_text.replace("| null", "").strip()
+            if re.fullmatch(r"\w+(\[\])?", kind) and kind.removesuffix("[]") in named:
+                fields.setdefault(interface, {})[name.strip().rstrip("?")] = kind
+    return fields
 
 
 def frontend_literal_unions(source: str) -> dict[str, frozenset[str | int]]:
@@ -368,6 +409,30 @@ def test_the_frontend_interfaces_match_the_recorded_contract(frontend_source: st
 
 def test_the_frontend_unions_match_the_recorded_contract(frontend_source: str) -> None:
     assert frontend_literal_unions(frontend_source) == UNION_VALUES
+
+
+def test_the_frontend_nests_the_same_objects(frontend_source: str) -> None:
+    # The frontend spells some small objects inline (CompletionOut.xp, GuidebookOut.unit, ...); the
+    # recorded nesting names them after their backend schemas, so those fields are compared by keys only.
+    recorded = {
+        parent: {
+            name: kind for name, kind in fields.items() if kind.removesuffix("[]") not in INLINE_OBJECT_KEYS
+        }
+        for parent, fields in OBJECT_FIELDS.items()
+        if parent in INTERFACE_KEYS
+    }
+    assert frontend_object_fields(frontend_source) == {
+        parent: fields for parent, fields in recorded.items() if fields
+    }
+
+
+def test_the_recorded_nesting_names_fields_and_types_of_the_contract() -> None:
+    for parent, fields in OBJECT_FIELDS.items():
+        assert parent in CONTRACT_KEYS, parent
+        assert set(fields) <= CONTRACT_KEYS[parent], parent
+        for kind in fields.values():
+            assert kind.removesuffix("[]") in CONTRACT_KEYS | DISCRIMINATED_UNIONS, kind
+    assert {answer_type for _, _, answer_type in ENDPOINTS.values()} <= set(CONTRACT_KEYS) - REQUEST_BODIES
 
 
 # ---- JSON formats ----
@@ -785,18 +850,6 @@ def test_extension_members_use_the_wire_formats() -> None:
     assert no_heart_due["nextHeartAt"] is None
 
 
-def assert_problem(response: Any, status: int, code: str) -> dict[str, Any]:
-    body: dict[str, Any] = response.json()
-    assert response.status_code == status
-    assert response.headers["content-type"] == PROBLEM_JSON
-    assert body["status"] == status
-    assert body["code"] == code
-    assert body["type"] == "/problems/" + code.lower().replace("_", "-")
-    assert body["requestId"] == response.headers["x-request-id"]
-    assert set(body) >= PROBLEM_KEYS
-    return body
-
-
 def test_a_conflict_is_a_409_problem_with_its_extension_members(api: TestClient) -> None:
     body = assert_problem(api.get(f"{API_V1_PREFIX}/probe/errors/OUT_OF_HEARTS"), 409, "OUT_OF_HEARTS")
     assert body["nextHeartAt"] == "2026-10-08T16:00:00Z"
@@ -873,7 +926,7 @@ def test_a_usable_idempotency_key_reaches_the_handler(api: TestClient) -> None:
 
 def test_dev_tools_answer_403_when_switched_off(api: TestClient) -> None:
     assert api.get(f"{API_V1_PREFIX}/probe/dev").status_code == 200
-    change_settings(api, enable_dev_tools=False)
+    use_settings(api, enable_dev_tools=False)
     assert_problem(api.get(f"{API_V1_PREFIX}/probe/dev"), 403, "DEV_TOOLS_DISABLED")
 
 
@@ -918,7 +971,7 @@ def test_the_user_header_selects_another_learner_but_never_a_bot(api: TestClient
 
 def test_the_user_header_is_ignored_when_the_setting_is_off(api: TestClient, db: Session) -> None:
     alex_id, bot_id = add_people(db)
-    change_settings(api, allow_user_header=False)
+    use_settings(api, allow_user_header=False)
     response = api.get(f"{API_V1_PREFIX}/probe/me", headers={"X-User-Id": str(bot_id)})
     assert response.json()["userId"] == alex_id
 
@@ -1038,3 +1091,222 @@ def test_the_interactive_docs_are_served(bare_client: TestClient) -> None:
     response = bare_client.get(f"{API_V1_PREFIX}/docs")
     assert response.status_code == 200
     assert "swagger" in response.text.lower()
+
+
+def test_the_api_serves_exactly_the_documented_endpoints(openapi: dict[str, Any]) -> None:
+    served = {
+        (method.upper(), path.removeprefix(API_V1_PREFIX)): operation["operationId"]
+        for path, item in openapi["paths"].items()
+        for method, operation in item.items()
+    }
+    assert served == {(method, path): operation for operation, (method, path, _) in ENDPOINTS.items()}
+    for operation, (method, path, answer_type) in ENDPOINTS.items():
+        responses = openapi["paths"][API_V1_PREFIX + path][method.lower()]["responses"]
+        successes = [response for status, response in responses.items() if status.startswith("2")]
+        assert successes, operation
+        for response in successes:  # 201 Created and the 200 replay of a creation alike
+            schema = response["content"]["application/json"]["schema"]
+            assert schema == {"$ref": f"#/components/schemas/{answer_type}"}, operation
+
+
+# ---- every endpoint, end to end ----
+
+# An ISO-8601 instant in UTC as the contract writes it: whole seconds, or milliseconds, then "Z".
+UTC_INSTANT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z")
+LOOKS_LIKE_AN_INSTANT = re.compile(r"\d{4}-\d{2}-\d{2}T")
+LOCAL_INSTANTS = frozenset({"localNow"})  # the only instant the contract writes with a UTC offset
+
+
+def shape_problems(value: object, kind: str, where: str, seen: set[str]) -> list[str]:
+    """How `value` differs from the contract type `kind` ("X", "X[]" or a union), nested objects
+    included. Every object type met is added to `seen`."""
+    if kind.endswith("[]"):
+        if not isinstance(value, list):
+            return [f"{where}: expected an array of {kind[:-2]}"]
+        return [
+            problem
+            for index, item in enumerate(value)
+            for problem in shape_problems(item, kind[:-2], f"{where}[{index}]", seen)
+        ]
+    if not isinstance(value, dict):
+        return [f"{where}: expected a {kind} object"]
+    if kind in DISCRIMINATED_UNIONS:
+        member = DISCRIMINATED_UNIONS[kind].get(value.get("type"))
+        if member is None:
+            return [f"{where}: {value.get('type')!r} is not a type of {kind}"]
+        kind = member
+    seen.add(kind)
+    problems = []
+    keys, expected = set(value), CONTRACT_KEYS[kind]
+    if keys != expected:
+        problems.append(
+            f"{where} ({kind}): missing {sorted(expected - keys)}, unexpected {sorted(keys - expected)}"
+        )
+    for name, child_kind in OBJECT_FIELDS.get(kind, {}).items():
+        if value.get(name) is not None:
+            problems += shape_problems(value[name], child_kind, f"{where}.{name}", seen)
+    return problems
+
+
+def instant_problems(value: object, where: str) -> list[str]:
+    """Every instant in `value` that is not written in UTC with a "Z" (localNow excepted)."""
+    if isinstance(value, list):
+        return [
+            problem
+            for index, item in enumerate(value)
+            for problem in instant_problems(item, f"{where}[{index}]")
+        ]
+    if not isinstance(value, dict):
+        return []
+    problems = []
+    for name, item in value.items():
+        if isinstance(item, str) and LOOKS_LIKE_AN_INSTANT.match(item):
+            if name not in LOCAL_INSTANTS and not UTC_INSTANT.fullmatch(item):
+                problems.append(f"{where}.{name}: {item!r} is not a UTC instant ending in Z")
+        else:
+            problems += instant_problems(item, f"{where}.{name}")
+    return problems
+
+
+def test_the_shape_check_names_every_difference() -> None:
+    seen: set[str] = set()
+    broken = json.loads(json.dumps(ME_EXAMPLE))
+    del broken["gems"]
+    broken["xp"]["week"] = broken["xp"].pop("thisWeek")
+    broken["pendingLeagueResult"]["newLeague"]["icon"] = "silver"
+    assert shape_problems(broken, "MeOut", "me", seen) == [
+        "me (MeOut): missing ['gems'], unexpected []",
+        "me.xp (MeXp): missing ['thisWeek'], unexpected ['week']",
+        "me.pendingLeagueResult.newLeague (LeagueBrief): missing [], unexpected ['icon']",
+    ]
+    assert {"MeOut", "MeXp", "LeagueResultOut", "LeagueBrief", "DevInfo"} <= seen
+    times = {"a": {"at": "2026-10-08T12:00:00+00:00"}, "localNow": "2026-10-08T17:30:00+05:30"}
+    assert instant_problems(times, "x") == [
+        "x.a.at: '2026-10-08T12:00:00+00:00' is not a UTC instant ending in Z"
+    ]
+
+
+@dataclass
+class EndpointTour:
+    """Calls endpoints by operation id and checks every answer against the contract, recording which
+    operations were called and which object types their answers contained."""
+
+    client: TestClient
+    operations: set[str] = field(default_factory=set)
+    types_seen: set[str] = field(default_factory=set)
+
+    def call(
+        self,
+        operation: str,
+        *,
+        expect: int = 200,
+        body: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        **path_params: object,
+    ) -> dict[str, Any]:
+        """Call one endpoint, assert its status, and check its answer's keys (nested) and instants."""
+        method, path, answer_type = ENDPOINTS[operation]
+        url = API_V1_PREFIX + path.format(**path_params)
+        response = self.client.request(method, url, json=body, headers=headers)
+        assert response.status_code == expect, f"{operation}: {response.status_code} {response.text}"
+        assert response.headers["content-type"] == "application/json", operation
+        answer: dict[str, Any] = response.json()
+        problems = shape_problems(answer, answer_type, operation, self.types_seen)
+        problems += instant_problems(answer, operation)
+        assert problems == [], "\n".join(problems)
+        self.operations.add(operation)
+        return answer
+
+    def play(
+        self, engine: Engine, start: dict[str, Any], *, wrong: frozenset[int] = frozenset()
+    ) -> dict[str, Any]:
+        """Start a session, answer every item (initial items whose seq is in `wrong` wrongly first),
+        then complete it; returns the receipt."""
+        session = self.call("startSession", expect=201, body=start)
+        items = {item["id"]: item for item in session["items"]}
+        exercises = load_exercises(engine, (item["exercise"]["id"] for item in items.values()))
+        current = session["currentItemId"]
+        while current is not None:
+            item = items[current]
+            miss = item["origin"] == "initial" and item["seq"] in wrong
+            payload = answer_for(exercises[item["exercise"]["id"]], correct=not miss)
+            result = self.call("submitAnswer", body=payload, session_id=session["id"], item_id=current)
+            if result["appendedItem"] is not None:
+                items[result["appendedItem"]["id"]] = result["appendedItem"]
+            current = result["session"]["currentItemId"]
+        return self.call("completeSession", session_id=session["id"])
+
+
+def tour_the_learners_pages(tour: EndpointTour) -> dict[str, Any]:
+    """The shell, settings, history, path, quests, content, league and profiles; returns the path."""
+    tour.call("getHealth")
+    me = tour.call("getMe")  # last week's promotion is still to be shown
+    tour.call("getSettings")
+    tour.call("updateSettings", body={"soundEffects": False})
+    tour.call("getActivity")
+    path = tour.call("getPath")
+    tour.call("getQuests")
+    tour.call("listCourses")
+    tour.call("getGuidebook", unit_id=path["units"][0]["id"])
+    league = tour.call("getLeague")  # this week's rows and last week's result
+    tour.call("getProfile", user_id="me")
+    tour.call("getProfile", user_id=next(row["userId"] for row in league["rows"] if not row["isMe"]))
+    tour.call("ackLeagueResult", membership_id=me["pendingLeagueResult"]["membershipId"])
+    return path
+
+
+def tour_the_shop(tour: EndpointTour) -> None:
+    tour.call("listShopItems")
+    key = {"Idempotency-Key": "4c7e1a0e-8f63-4e8b-9d55-0b6a2f7c1d90"}
+    bought = tour.call("createPurchase", expect=201, body={"itemCode": "heart_refill"}, headers=key)
+    tour.call("getPurchase", purchase_id=bought["id"])
+
+
+def tour_the_lesson_loop(
+    tour: EndpointTour, engine: Engine, path: dict[str, Any], clock: FrozenClock
+) -> None:
+    """Lessons, a chest, a legendary run that is quit, and a timed run that runs out of time."""
+    drinks, chest = path["units"][1]["nodes"][1]["id"], path["units"][1]["nodes"][2]["id"]
+    lesson = tour.call("startSession", expect=201, body={"kind": "lesson", "nodeId": drinks})
+    assert tour.call("getMe")["activeSession"] is not None
+    tour.call("getSession", session_id=lesson["id"])
+    tour.call("quitSession", session_id=lesson["id"])
+    first = tour.play(engine, {"kind": "lesson", "nodeId": drinks}, wrong=frozenset({1}))  # with a retry
+    assert first["achievementsUnlocked"] and first["league"] and first["node"]
+    second = tour.play(engine, {"kind": "lesson", "nodeId": drinks})
+    assert second["questsCompleted"]
+    tour.call("claimChest", node_id=chest)
+
+    introduce_yourself = path["units"][0]["nodes"][1]["id"]
+    legendary = tour.call(
+        "startSession", expect=201, body={"kind": "legendary", "nodeId": introduce_yourself}
+    )
+    assert legendary["lives"] is not None
+    tour.call("quitSession", session_id=legendary["id"])
+    timed = tour.call("startSession", expect=201, body={"kind": "timed"})
+    assert timed["timer"] is not None
+    clock.advance(seconds=31)
+    assert tour.call("completeSession", session_id=timed["id"])["timed"] is not None
+
+
+def tour_the_dev_tools(tour: EndpointTour) -> None:
+    tour.call("getDevClock")
+    tour.call("advanceDevClock", body={"hours": 1})
+    tour.call("devNextDay")
+    assert tour.call("devNextWeek")["effects"]["leagueResults"]  # this week's league is finalized
+    tour.call("patchDevLearner", body={"hearts": 3})
+    tour.call("resetDemo")
+
+
+def test_every_endpoint_answers_in_the_contract_shape(
+    client: TestClient, clock: FrozenClock, seeded_engine: Engine
+) -> None:
+    tour = EndpointTour(client)
+    path = tour_the_learners_pages(tour)
+    tour_the_shop(tour)
+    tour_the_lesson_loop(tour, seeded_engine, path, clock)
+    tour_the_dev_tools(tour)
+
+    assert tour.operations == set(ENDPOINTS)
+    answer_types = set(CONTRACT_KEYS) - REQUEST_BODIES - {"CompletionReceipt", "ProblemDetails", "FieldError"}
+    assert answer_types - tour.types_seen == set()  # every object type of every answer was met, filled in

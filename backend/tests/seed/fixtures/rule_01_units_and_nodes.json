@@ -1,0 +1,53 @@
+{
+  "rule": "Every unit ends with exactly one review node. Chests have chestGems above 0 and no lessons. Skills have 2 to 3 lessons; reviews have 1. Node keys are unique.",
+  "cases": [
+    {
+      "name": "unit-without-review",
+      "patch": [ { "op": "remove", "file": "unit-3.json", "path": "/nodes/2" } ],
+      "expect": "unit-3.json › nodes: a unit ends with exactly one review node"
+    },
+    {
+      "name": "review-before-the-end",
+      "patch": [ { "op": "move", "file": "unit-1.json", "from": "/nodes/3", "path": "/nodes/0" } ],
+      "expect": "unit-1.json › nodes: a unit ends with exactly one review node"
+    },
+    {
+      "name": "chest-without-gems",
+      "patch": [ { "op": "replace", "file": "unit-1.json", "path": "/nodes/2/chestGems", "value": 0 } ],
+      "expect": "unit-1.json › nodes[2]: a chest needs chestGems above 0"
+    },
+    {
+      "name": "chest-with-lessons",
+      "patch": [ { "op": "copy", "file": "unit-1.json", "from": "/nodes/0/lessons", "path": "/nodes/2/lessons" } ],
+      "expect": "unit-1.json › nodes[2]: a chest has no lessons"
+    },
+    {
+      "name": "skill-with-one-lesson",
+      "patch": [
+        { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/2" },
+        { "op": "remove", "file": "unit-1.json", "path": "/nodes/0/lessons/1" }
+      ],
+      "expect": "unit-1.json › nodes[0]: needs 2 to 3 lessons, has 1"
+    },
+    {
+      "name": "skill-with-four-lessons",
+      "patch": [ { "op": "copy", "file": "unit-1.json", "from": "/nodes/0/lessons/0", "path": "/nodes/0/lessons/3" } ],
+      "expect": "unit-1.json › nodes[0]: needs 2 to 3 lessons, has 4"
+    },
+    {
+      "name": "review-with-two-lessons",
+      "patch": [ { "op": "copy", "file": "unit-1.json", "from": "/nodes/3/lessons/0", "path": "/nodes/3/lessons/1" } ],
+      "expect": "unit-1.json › nodes[3]: a review has exactly 1 lesson, has 2"
+    },
+    {
+      "name": "skill-with-chest-gems",
+      "patch": [ { "op": "add", "file": "unit-1.json", "path": "/nodes/0/chestGems", "value": 5 } ],
+      "expect": "unit-1.json › nodes[0]: only a chest has chestGems, not a skill"
+    },
+    {
+      "name": "node-key-used-twice",
+      "patch": [ { "op": "replace", "file": "unit-2.json", "path": "/nodes/2/key", "value": "u1.chest" } ],
+      "expect": "unit-2.json › nodes[2] › key: 'u1.chest' is already the key of unit-1.json › nodes[2]"
+    }
+  ]
+}
