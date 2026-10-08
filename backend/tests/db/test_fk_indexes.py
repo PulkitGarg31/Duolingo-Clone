@@ -93,33 +93,78 @@ ON_DELETE = {
     ("achievement_tiers", ("achievement_id",)): ("achievements", "CASCADE"),
 }
 
-# Every explicitly named index; UNIQUE constraints add unnamed automatic indexes on top.
-NAMED_INDEXES = {
-    "ux_exercise_options_one_correct",
-    "ux_exercise_answers_one_primary",
-    "ix_glossary_terms_node_id",
-    "ix_users_current_course_id",
-    "ix_user_stats_league_tier",
-    "ux_lesson_sessions_one_active",
-    "ix_lesson_sessions_user_id_status_ended_at",
-    "ix_lesson_sessions_node_id",
-    "ix_lesson_sessions_lesson_id_node_id",
-    "ix_session_items_exercise_id",
-    "ix_xp_events_user_id_local_date",
-    "ix_xp_events_user_id_earned_at",
-    "ix_purchases_shop_item_id",
-    "ux_gem_transactions_chest_once",
-    "ux_gem_transactions_quest_claim",
-    "ux_gem_transactions_purchase",
-    "ux_gem_transactions_fee_once",
-    "ix_gem_transactions_user_id_created_at",
-    "ix_gem_transactions_node_id",
-    "ix_gem_transactions_session_id",
-    "ix_league_cohorts_open",
-    "ix_league_memberships_user_id",
-    "ix_user_achievements_achievement_tier_id",
-    "ix_user_achievements_session_id",
-    "ix_quest_claims_quest_id",
+# Every explicitly named index: (table, columns, unique, partial-index predicate or None).
+# UNIQUE constraints add unnamed automatic indexes on top (see UNIQUE_KEYS).
+INDEXES: dict[str, tuple[str, tuple[str, ...], bool, str | None]] = {
+    "ux_exercise_options_one_correct": ("exercise_options", ("exercise_id",), True, "is_correct = 1"),
+    "ux_exercise_answers_one_primary": ("exercise_answers", ("exercise_id",), True, "is_primary = 1"),
+    "ix_glossary_terms_node_id": ("glossary_terms", ("node_id",), False, None),
+    "ix_users_current_course_id": ("users", ("current_course_id",), False, None),
+    "ix_user_stats_league_tier": ("user_stats", ("league_tier",), False, None),
+    "ux_lesson_sessions_one_active": ("lesson_sessions", ("user_id",), True, "status = 'active'"),
+    "ix_lesson_sessions_user_id_status_ended_at": (
+        "lesson_sessions",
+        ("user_id", "status", "ended_at"),
+        False,
+        None,
+    ),
+    "ix_lesson_sessions_node_id": ("lesson_sessions", ("node_id",), False, None),
+    "ix_lesson_sessions_lesson_id_node_id": ("lesson_sessions", ("lesson_id", "node_id"), False, None),
+    "ix_session_items_exercise_id": ("session_items", ("exercise_id",), False, None),
+    "ix_xp_events_user_id_local_date": ("xp_events", ("user_id", "local_date"), False, None),
+    "ix_xp_events_user_id_earned_at": ("xp_events", ("user_id", "earned_at"), False, None),
+    "ix_purchases_shop_item_id": ("purchases", ("shop_item_id",), False, None),
+    "ux_gem_transactions_chest_once": ("gem_transactions", ("user_id", "node_id"), True, "reason = 'chest'"),
+    "ux_gem_transactions_quest_claim": (
+        "gem_transactions",
+        ("quest_claim_id",),
+        True,
+        "quest_claim_id IS NOT NULL",
+    ),
+    "ux_gem_transactions_purchase": ("gem_transactions", ("purchase_id",), True, "purchase_id IS NOT NULL"),
+    "ux_gem_transactions_fee_once": ("gem_transactions", ("session_id",), True, "reason = 'legendary_fee'"),
+    "ix_gem_transactions_user_id_created_at": ("gem_transactions", ("user_id", "created_at"), False, None),
+    "ix_gem_transactions_node_id": ("gem_transactions", ("node_id",), False, None),
+    "ix_gem_transactions_session_id": ("gem_transactions", ("session_id",), False, None),
+    "ix_league_cohorts_open": ("league_cohorts", ("week_start",), False, "finalized_at IS NULL"),
+    "ix_league_memberships_user_id": ("league_memberships", ("user_id",), False, None),
+    "ix_user_achievements_achievement_tier_id": ("user_achievements", ("achievement_tier_id",), False, None),
+    "ix_user_achievements_session_id": ("user_achievements", ("session_id",), False, None),
+    "ix_quest_claims_quest_id": ("quest_claims", ("quest_id",), False, None),
+}
+NAMED_INDEXES = set(INDEXES)
+
+# Natural keys: the column lists of each table's UNIQUE constraints. Ordered loading, the seed's
+# lookups and every idempotent write (XP lines, purchases, claims, memberships) rely on them.
+UNIQUE_KEYS: dict[str, set[tuple[str, ...]]] = {
+    "courses": {("slug",), ("position",)},
+    "units": {("course_id", "position")},
+    "path_nodes": {("unit_id", "position"), ("key",)},
+    "lessons": {("node_id", "position"), ("id", "node_id")},
+    "exercises": {("lesson_id", "position"), ("key",)},
+    "exercise_options": {("exercise_id", "position")},
+    "exercise_answers": {("exercise_id", "text")},
+    "exercise_pairs": {
+        ("exercise_id", "position"),
+        ("exercise_id", "learning_text"),
+        ("exercise_id", "native_text"),
+    },
+    "guidebook_phrases": {("unit_id", "position")},
+    "glossary_terms": {("course_id", "language", "term")},
+    "users": {("username",)},
+    "session_items": {("session_id", "seq")},
+    "xp_events": {("session_id", "reason")},
+    "purchases": {("user_id", "idempotency_key")},
+    "activity_days": {("user_id", "local_date")},
+    "leagues": {("name",)},
+    "league_cohorts": {("league_tier", "week_start")},
+    "league_memberships": {("cohort_id", "user_id"), ("cohort_id", "final_rank")},
+    "achievements": {("code",), ("position",)},
+    "achievement_tiers": {("achievement_id", "level"), ("achievement_id", "threshold")},
+    "user_achievements": {("user_id", "achievement_tier_id")},
+    "shop_items": {("code",), ("position",)},
+    "quests": {("code",), ("position",)},
+    "quest_claims": {("user_id", "quest_id", "local_date")},
 }
 
 
@@ -185,10 +230,27 @@ def test_every_foreign_key_leads_an_index(engine: Engine) -> None:
 
 
 def test_named_indexes_match_the_index_map(engine: Engine) -> None:
+    actual = {}
     with engine.connect() as conn:
-        names = set(
-            conn.exec_driver_sql(
-                "SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL"
-            ).scalars()
+        named = conn.exec_driver_sql(
+            "SELECT name, tbl_name, sql FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL"
         )
-    assert names == NAMED_INDEXES
+        for name, table, sql in named.all():
+            columns = tuple(row.name for row in conn.exec_driver_sql(f"PRAGMA index_info({name})"))
+            _, _, predicate = sql.partition(" WHERE ")
+            actual[name] = (table, columns, sql.startswith("CREATE UNIQUE INDEX "), predicate or None)
+    assert actual == INDEXES
+
+
+def test_natural_keys_are_unique_constraints_named_by_convention(engine: Engine) -> None:
+    keys: dict[str, set[tuple[str, ...]]] = defaultdict(set)
+    misnamed = []
+    with engine.connect() as conn:
+        for table, ddl in conn.exec_driver_sql("SELECT name, sql FROM sqlite_master WHERE type = 'table'"):
+            for name, column_list in re.findall(r"CONSTRAINT (\w+) UNIQUE \(([^)]*)\)", ddl):
+                columns = tuple(column.strip().strip('"') for column in column_list.split(","))
+                keys[table].add(columns)
+                if name != f"uq_{table}_{'_'.join(columns)}":
+                    misnamed.append(name)
+    assert misnamed == []
+    assert dict(keys) == UNIQUE_KEYS

@@ -28,7 +28,8 @@ _CONNECTION_PRAGMAS = (
 def ensure_sqlite_dir(database_url: str) -> None:
     """Create the directory that will hold the SQLite file (SQLite creates the file, not its folder).
 
-    Startup calls this before the first connection. An in-memory database needs nothing.
+    make_engine() calls it, so any engine can open a brand-new database. An in-memory database
+    needs nothing.
     """
     database = make_url(database_url).database
     if database and database != ":memory:":
@@ -51,12 +52,14 @@ def _on_begin(connection: Connection) -> None:
 def make_engine(database_url: str) -> Engine:
     """An engine with the connection PRAGMAs and BEGIN IMMEDIATE transactions, for the app and tests.
 
-    Making it touches nothing on disk; the first connection opens the file (see ensure_sqlite_dir).
+    The database's folder is created first; the first connection then creates the file itself.
     """
     if make_url(database_url).get_backend_name() != "sqlite":
         raise ValueError(f"only SQLite is supported, got {database_url!r}")
+    ensure_sqlite_dir(database_url)
     # Requests run on a thread pool, so a pooled connection may be used by several threads in turn.
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    # The driver's lock timeout (5 s, like busy_timeout) also covers the PRAGMAs that run before it.
+    engine = create_engine(database_url, connect_args={"check_same_thread": False, "timeout": 5})
     event.listen(engine, "connect", _on_connect)
     event.listen(engine, "begin", _on_begin)
     return engine

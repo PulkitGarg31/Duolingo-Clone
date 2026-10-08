@@ -47,12 +47,11 @@ class FrozenClock:
     def now(self) -> datetime:
         return self._at
 
-    def advance(
-        self, *, days: float = 0, hours: float = 0, minutes: float = 0, seconds: float = 0
-    ) -> datetime:
-        """Move time forward and return the new instant. Time never moves backwards."""
-        delta = timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
-        if delta < timedelta(0):
+    def advance(self, **delta: float) -> datetime:
+        """Move time forward by `timedelta(**delta)` (weeks=, days=, hours=, ... microseconds=) and
+        return the new instant. Time never moves backwards."""
+        step = timedelta(**delta)
+        if step < timedelta(0):
             raise ValueError("time only moves forward")
-        self._at += delta
+        self._at += step
         return self._at

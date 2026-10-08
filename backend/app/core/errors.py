@@ -169,7 +169,7 @@ class OutOfHearts(Conflict):
     title = "Out of hearts"
     default_detail = "You have no hearts left. Refill your hearts or practice to earn one."
 
-    def __init__(self, *, next_heart_at: datetime | None, detail: str | None = None) -> None:
+    def __init__(self, next_heart_at: datetime | None, *, detail: str | None = None) -> None:
         super().__init__(detail, extra={"nextHeartAt": next_heart_at})
 
 
@@ -178,7 +178,7 @@ class InsufficientGems(Conflict):
     title = "Not enough gems"
     default_detail = "You don't have enough gems for that."
 
-    def __init__(self, *, required_gems: int, balance: int, detail: str | None = None) -> None:
+    def __init__(self, required_gems: int, balance: int, *, detail: str | None = None) -> None:
         super().__init__(detail, extra={"requiredGems": required_gems, "balance": balance})
 
 
@@ -209,7 +209,7 @@ class SessionNotActive(Conflict):
     default_detail = "This session has already ended."
 
     def __init__(
-        self, *, session_status: SessionStatus, end_reason: EndReason | None, detail: str | None = None
+        self, session_status: SessionStatus, end_reason: EndReason | None, *, detail: str | None = None
     ) -> None:
         # Not "status": RFC 9457 reserves that member for the HTTP status code.
         super().__init__(detail, extra={"sessionStatus": session_status, "endReason": end_reason})
@@ -220,7 +220,7 @@ class SessionExpired(Conflict):
     title = "Session expired"
     default_detail = "Time's up for this session. Finish it to see your results."
 
-    def __init__(self, *, expires_at: datetime, detail: str | None = None) -> None:
+    def __init__(self, expires_at: datetime, *, detail: str | None = None) -> None:
         super().__init__(detail, extra={"expiresAt": expires_at})
 
 
@@ -235,7 +235,7 @@ class ItemOutOfOrder(Conflict):
     title = "Item out of order"
     default_detail = "Answer the current exercise first."
 
-    def __init__(self, *, current_item_id: int | None, detail: str | None = None) -> None:
+    def __init__(self, current_item_id: int | None, *, detail: str | None = None) -> None:
         super().__init__(detail, extra={"currentItemId": current_item_id})
 
 

@@ -5,9 +5,11 @@ invalid change and checks that the intended constraint is the one that fired.
 """
 
 import re
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -16,6 +18,7 @@ from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session
 
 from app.core.clock import FrozenClock
+from app.core.db import make_engine
 from app.domain.calendar import local_date
 from app.domain.enums import (
     ActivityKind,
@@ -25,14 +28,18 @@ from app.domain.enums import (
     ItemOrigin,
     ItemResult,
     NodeKind,
+    QuestIcon,
+    QuestMetric,
     SessionKind,
     SessionStatus,
+    ShopItemKind,
+    ShopSection,
     TextLang,
     UnitColor,
     XpReason,
 )
 from app.domain.rng import stable_seed
-from app.domain.rules import CHEST_GEMS, MAX_STREAK_FREEZES
+from app.domain.rules import CHEST_GEMS, LEGENDARY_PRICE_GEMS, MAX_STREAK_FREEZES
 from app.models import (
     ActivityDay,
     AppState,
@@ -49,7 +56,11 @@ from app.models import (
     Lesson,
     LessonSession,
     PathNode,
+    Purchase,
+    Quest,
+    QuestClaim,
     SessionItem,
+    ShopItem,
     Unit,
     User,
     UserSettings,
@@ -235,6 +246,18 @@ def test_every_connection_enforces_foreign_keys_and_uses_wal(db: Session) -> Non
     names = ("foreign_keys", "journal_mode", "synchronous", "busy_timeout")
     values = {name: db.execute(sa.text(f"PRAGMA {name}")).scalar_one() for name in names}
     assert values == {"foreign_keys": 1, "journal_mode": "wal", "synchronous": 1, "busy_timeout": 5000}
+
+
+def test_the_engine_creates_the_folder_of_a_new_database(tmp_path: Path) -> None:
+    # SQLite creates a missing file but not a missing folder ("unable to open database file").
+    database = tmp_path / "fresh" / "data" / "app.db"
+    engine = make_engine(f"sqlite:///{database.as_posix()}")
+    try:
+        with engine.connect() as conn:
+            assert conn.exec_driver_sql("PRAGMA journal_mode").scalar_one() == "wal"
+    finally:
+        engine.dispose()
+    assert database.is_file()
 
 
 def test_every_check_constraint_is_named_after_its_table(db: Session) -> None:
@@ -459,6 +482,94 @@ def test_a_chest_pays_out_once(db: Session, world: World) -> None:
     db.flush()
     db.add(gem_row(world, GemReason.CHEST, delta=CHEST_GEMS, balance_after=2 * CHEST_GEMS, node_id=chest))
     with unique_fails("gem_transactions.user_id", "gem_transactions.node_id"):
+        db.flush()
+
+
+# A quest claim, a purchase and a legendary session each move gems exactly once: partial unique
+# indexes back the replay paths of quest rewards, shop purchases and the legendary entry fee.
+
+
+def quest_claim_source(db: Session, world: World) -> int:
+    quest = Quest(
+        code="daily_goal",
+        slot=1,
+        title_template="Earn {n} XP",
+        metric=QuestMetric.DAILY_GOAL_XP,
+        reward_gems=10,
+        icon=QuestIcon.BOLT,
+        position=1,
+    )
+    db.add(quest)
+    db.flush()
+    claim = QuestClaim(
+        user_id=world.learner.id,
+        quest_id=quest.id,
+        local_date=local_date(world.now, world.learner.timezone),
+        claimed_at=world.now,
+    )
+    db.add(claim)
+    db.flush()
+    return claim.id
+
+
+def purchase_source(db: Session, world: World) -> int:
+    item = ShopItem(
+        code="streak_freeze",
+        kind=ShopItemKind.STREAK_FREEZE,
+        section=ShopSection.POWER_UPS,
+        name="Streak Freeze",
+        description="Keeps your streak if you miss a day.",
+        price_gems=200,
+        position=1,
+    )
+    db.add(item)
+    db.flush()
+    purchase = Purchase(
+        user_id=world.learner.id,
+        shop_item_id=item.id,
+        price_gems=item.price_gems,
+        idempotency_key="9b2f6c1e-3d4a-4f5b-8c7d-0e1f2a3b4c5d",
+        purchased_at=world.now,
+    )
+    db.add(purchase)
+    db.flush()
+    return purchase.id
+
+
+def legendary_session_source(db: Session, world: World) -> int:
+    session = lesson_session(world, kind=SessionKind.LEGENDARY, lesson_id=None)
+    db.add(session)
+    db.flush()
+    return session.id
+
+
+@pytest.mark.parametrize(
+    ("reason", "delta", "source_column", "make_source"),
+    [
+        pytest.param(GemReason.QUEST, 10, "quest_claim_id", quest_claim_source, id="quest-reward"),
+        pytest.param(GemReason.PURCHASE, -200, "purchase_id", purchase_source, id="purchase"),
+        pytest.param(
+            GemReason.LEGENDARY_FEE,
+            -LEGENDARY_PRICE_GEMS,
+            "session_id",
+            legendary_session_source,
+            id="legendary-fee",
+        ),
+    ],
+)
+def test_each_gem_source_is_booked_once(
+    db: Session,
+    world: World,
+    reason: GemReason,
+    delta: int,
+    source_column: str,
+    make_source: Callable[[Session, World], int],
+) -> None:
+    source = {source_column: make_source(db, world)}
+    db.add(gem_row(world, reason, delta=delta, balance_after=1000, **source))
+    db.flush()
+    db.add(gem_row(world, reason, delta=delta, balance_after=1000, **source))
+    with unique_fails(f"gem_transactions.{source_column}"):
         db.flush()
 
 
