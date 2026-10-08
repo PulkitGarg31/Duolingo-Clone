@@ -2,8 +2,9 @@
 
 Case, punctuation, spacing, quote style and English contractions never matter. Typed answers are
 also forgiven wrong or missing accents and one small typo, each reported with a note, but never a
-slip that changes the meaning: short words (el/la) and final letters (hermano/hermana) must be
-exact. Word-bank tiles can only be wrong in choice or order, so they must match exactly.
+slip that changes the meaning: short words (el/la), final letters (hermano/hermana) and slips that
+spell another word of the course (buenos/buenas) must be exact. Word-bank tiles can only be wrong in
+choice or order, so they must match exactly.
 
 `grade()` first checks that the answer fits the exercise (its type and its option, tile and pair
 ids) and raises `InvalidAnswer` when it does not; services report that as 422 INVALID_ANSWER.
@@ -193,6 +194,14 @@ def strip_accents(text: str) -> str:
     return "".join(ch for ch in unicodedata.normalize("NFD", text) if unicodedata.category(ch) != "Mn")
 
 
+def vocabulary(texts: Iterable[str], lang: TextLang) -> frozenset[str]:
+    """Every distinct word of `texts`, normalized and without accents, as the typo rule compares words.
+
+    Built from a course's texts in one language, it is the set of real words a learner might mean.
+    """
+    return frozenset(word for text in texts for word in strip_accents(normalize(text, lang)).split())
+
+
 def osa_distance(a: str, b: str) -> int:
     """The optimal string alignment distance between `a` and `b`.
 
@@ -218,8 +227,12 @@ def osa_distance(a: str, b: str) -> int:
     return d[len(a)][len(b)]
 
 
-def is_single_typo(given: str, target: str) -> bool:
-    """True when `given` is `target` with one small slip in one word (both normalized, no accents)."""
+def is_single_typo(given: str, target: str, known_words: frozenset[str] = frozenset()) -> bool:
+    """True when `given` is `target` with one small slip in one word (both normalized, no accents).
+
+    `known_words` is the course's vocabulary in the answer's language (see `vocabulary`): a typed
+    word found there is a real word the learner chose, so it is never forgiven as a slip.
+    """
     given_words, target_words = given.split(), target.split()
     if len(given_words) != len(target_words):
         return False  # a missing or extra word is a real mistake
@@ -230,6 +243,7 @@ def is_single_typo(given: str, target: str) -> bool:
     return (
         len(expected) >= TYPO_MIN_WORD_LENGTH  # short words must be exact: el/la, un/una
         and typed[-1] == expected[-1]  # the final letter carries gender and number: hermano/hermana
+        and typed not in known_words  # another word of the course is a wrong word: buenos/buenas
         and osa_distance(typed, expected) == 1  # one edit, a swap of neighbours included: gutso/gusto
     )
 
@@ -246,13 +260,21 @@ def blame(given: str, target: str) -> GradeNote | None:
     return None
 
 
-def grade_text(given: str, accepted: Sequence[str], lang: TextLang, *, lenient: bool) -> TextGrade:
+def grade_text(
+    given: str,
+    accepted: Sequence[str],
+    lang: TextLang,
+    *,
+    lenient: bool,
+    known_words: frozenset[str] = frozenset(),
+) -> TextGrade:
     """Compare a written answer with the accepted answers, the primary first.
 
     An exact match is correct (with the `alternate` note for an answer other than the primary).
     Word-bank tiles (`lenient=False`) stop there. Typed text may then differ in accents only
-    (`accent`) or by one small typo (`typo`). Anything else is wrong, with a note when the
-    mistake is one missing or one wrong word compared with the primary answer.
+    (`accent`) or by one small typo (`typo`) that does not spell one of the `known_words`. Anything
+    else is wrong, with a note when the mistake is one missing or one wrong word compared with the
+    primary answer.
     """
     answer = normalize(given, lang)
     if not answer:
@@ -269,7 +291,7 @@ def grade_text(given: str, accepted: Sequence[str], lang: TextLang, *, lenient: 
         if bare == target:
             return TextGrade(True, GradeNote.ACCENT, accepted[i])
     for i, target in enumerate(bare_targets):
-        if is_single_typo(bare, target):
+        if is_single_typo(bare, target, known_words):
             return TextGrade(True, GradeNote.TYPO, accepted[i])
     return TextGrade(False, blame(bare, bare_targets[0]))
 
@@ -288,8 +310,12 @@ def answer_language(text_language: TextLang, *, audio_only: bool) -> TextLang:
 # ---- grading one exercise ----
 
 
-def grade(key: AnswerKey, answer: Answer) -> Grade:
-    """Grade one answer to one exercise. Raises InvalidAnswer when the answer does not fit it."""
+def grade(key: AnswerKey, answer: Answer, *, known_words: frozenset[str] = frozenset()) -> Grade:
+    """Grade one answer to one exercise. Raises InvalidAnswer when the answer does not fit it.
+
+    `known_words` is the course's vocabulary in the language a written answer is in (see
+    `answer_language`); it keeps the typo rule from forgiving a slip that spells another word.
+    """
     match answer:
         case Skip():
             return Grade(ItemResult.SKIPPED, correct_answer=_solution(key))
@@ -309,7 +335,7 @@ def grade(key: AnswerKey, answer: Answer) -> Grade:
             return _grade_written(key, sentence, lenient=False)
         case TextAnswer(exercise_type=declared, text=text):
             _check_type(key, declared)
-            return _grade_written(key, text, lenient=True)
+            return _grade_written(key, text, lenient=True, known_words=known_words)
         case PairsAnswer(pairs=pairs):
             _check_type(key, ExerciseType.MATCH_PAIRS)
             expected = sorted(key.pair_ids)
@@ -336,11 +362,13 @@ def _result(correct: bool) -> ItemResult:
     return ItemResult.CORRECT if correct else ItemResult.INCORRECT
 
 
-def _grade_written(key: AnswerKey, text: str, *, lenient: bool) -> Grade:
+def _grade_written(
+    key: AnswerKey, text: str, *, lenient: bool, known_words: frozenset[str] = frozenset()
+) -> Grade:
     if key.text_language is None:
         raise ValueError(f"a {key.type} exercise needs a sentence")
     lang = answer_language(key.text_language, audio_only=key.audio_only)
-    verdict = grade_text(text, key.accepted, lang, lenient=lenient)
+    verdict = grade_text(text, key.accepted, lang, lenient=lenient, known_words=known_words)
     # After an accent or typo note, show the accepted answer the learner was close to. Otherwise show
     # the primary: "Correct solution:" after a mistake, "Another correct solution:" after an alternate.
     near_miss = verdict.note in (GradeNote.ACCENT, GradeNote.TYPO)

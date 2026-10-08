@@ -22,6 +22,7 @@ from app.domain.grading import (
     normalize,
     osa_distance,
     strip_accents,
+    vocabulary,
 )
 
 ES, EN = TextLang.ES, TextLang.EN
@@ -116,6 +117,46 @@ def test_word_bank_answers_must_match_exactly(
 def test_a_near_miss_reports_the_accepted_answer_it_matched() -> None:
     verdict = grade_text("yo bebo cafe", ("Bebo café.", "Yo bebo café."), ES, lenient=True)
     assert verdict == TextGrade(True, ACCENT, "Yo bebo café.")
+
+
+# ---- a slip that spells another word of the course is a wrong word, not a typo ----
+
+# Spanish words of a course, collected the way the session service does it: from glossary terms,
+# accepted answers, options and pairs.
+COURSE_WORDS_ES = vocabulary(
+    ["Buenos días", "Buenas noches", "la madre", "el padre", "Mi madre se llama Elena."], ES
+)
+
+COURSE_WORD_CASES = [
+    pytest.param("Buenas noches", "Buenos noches", False, WRONG_WORD, id="buenos-is-a-course-word"),
+    pytest.param(
+        "La madre se llama Elena", "La padre se llama Elena", False, WRONG_WORD, id="padre-is-a-course-word"
+    ),
+    pytest.param("La madre se llama Elena", "La madre se llama Elenna", True, TYPO, id="non-word-is-a-typo"),
+]
+
+
+@pytest.mark.parametrize(("accepted", "given", "correct", "note"), COURSE_WORD_CASES)
+def test_a_slip_that_spells_a_course_word_is_a_wrong_word(
+    accepted: str, given: str, correct: bool, note: GradeNote
+) -> None:
+    verdict = grade_text(given, (accepted,), ES, lenient=True, known_words=COURSE_WORDS_ES)
+    assert (verdict.correct, verdict.note) == (correct, note)
+
+
+def test_without_course_words_a_one_letter_slip_is_a_typo() -> None:
+    assert grade_text("Buenos noches", ("Buenas noches",), ES, lenient=True).note == TYPO
+
+
+def test_vocabulary_holds_each_word_normalized_and_without_accents() -> None:
+    assert vocabulary(["¡Buenos días!", "El café, por favor."], ES) == {
+        "buenos",
+        "dias",
+        "el",
+        "cafe",
+        "por",
+        "favor",
+    }
 
 
 # ---- normalization helpers ----
@@ -272,6 +313,15 @@ class TestTypedText:
     def test_a_text_answer_only_names_a_typed_exercise_type(self) -> None:
         with pytest.raises(ValueError, match="typed"):
             TextAnswer(ExerciseType.MATCH_PAIRS, "el agua")
+
+    def test_course_words_reach_the_typo_rule(self) -> None:
+        key = AnswerKey(
+            type=ExerciseType.TYPE_ANSWER, text="Good night", text_language=EN, accepted=("Buenas noches",)
+        )
+        answer = TextAnswer(ExerciseType.TYPE_ANSWER, "buenos noches")
+        verdict = grade(key, answer, known_words=COURSE_WORDS_ES)
+        assert verdict == Grade(INCORRECT, WRONG_WORD, "Buenas noches")
+        assert grade(key, answer) == Grade(CORRECT, TYPO, "Buenas noches")
 
 
 class TestMatchPairs:
