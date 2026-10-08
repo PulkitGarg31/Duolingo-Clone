@@ -1,0 +1,45 @@
+/*
+ * Match-pair verdicts. A correct pair turns green quickly, holds, then from 62 % of 800 ms fades to the
+ * disabled look and loses its lip. A wrong pair flashes pink and red, then returns to normal. Both end where
+ * they stay (forwards), so a matched tile keeps its disabled look.
+ */
+
+.matched {
+  animation: matched 800ms ease forwards;
+}
+
+.wrong {
+  animation: wrong 800ms ease forwards;
+}
+
+@keyframes matched {
+  15%,
+  62% {
+    background-color: var(--c-correct-bg);
+    border-color: var(--c-correct-line);
+    color: var(--c-correct-fg);
+    box-shadow: 0 2px 0 var(--c-correct-line);
+  }
+  100% {
+    background-color: var(--c-bg);
+    border-color: var(--c-line);
+    color: var(--c-fg-faint);
+    box-shadow: 0 0 0 transparent;
+  }
+}
+
+@keyframes wrong {
+  0%,
+  62% {
+    background-color: var(--c-wrong-bg);
+    border-color: var(--c-wrong-line);
+    color: var(--c-wrong-fg);
+    box-shadow: 0 2px 0 var(--c-wrong-line);
+  }
+  100% {
+    background-color: var(--c-bg);
+    border-color: var(--c-line);
+    color: var(--c-fg);
+    box-shadow: 0 2px 0 var(--c-line);
+  }
+}
