@@ -1,0 +1,118 @@
+/*
+ * Loops and entrances of the celebration screens that the global keyframes do not cover. Under reduced motion
+ * the global rule cuts every animation to a single 1 ms run, which leaves these decorations standing still.
+ */
+
+/* The soft bee glow behind the streak flame, breathing every 2 s. */
+.glow {
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--duo-bee) 25%, transparent), transparent);
+  animation: breathe 2s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+/* Light rays behind a trophy or badge: wedges of --ray-color fading out from the centre, one turn every 8 s. */
+.rays {
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, var(--ray-color) 0deg 11deg, transparent 11deg 30deg);
+  mask-image: radial-gradient(closest-side, #000 30%, transparent 100%);
+  animation: turn 8s linear infinite;
+}
+
+@keyframes turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Rays that are pure decoration disappear when motion is reduced. */
+:global(html[data-motion="reduced"]) .optional {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(html:not([data-motion])) .optional {
+    display: none;
+  }
+}
+
+/*
+ * Translucent bubbles rising through the purple screen. Each sits at its own place (--size across) and drifts
+ * past it; on phones they shrink so they never crowd the result.
+ */
+.bubble {
+  position: absolute;
+  width: calc(var(--size) * 0.6);
+  height: calc(var(--size) * 0.6);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.12);
+  animation: rise 20s linear infinite;
+}
+
+@media (width >= 43.75rem) {
+  .bubble {
+    width: var(--size);
+    height: var(--size);
+  }
+}
+
+@keyframes rise {
+  0% {
+    transform: translateY(45vh);
+    opacity: 0;
+  }
+  15%,
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-45vh);
+    opacity: 0;
+  }
+}
+
+/* An achievement tile drops in and settles. */
+.drop {
+  animation: drop 500ms ease-out both;
+}
+
+@keyframes drop {
+  0% {
+    opacity: 0;
+    transform: translateY(-40px) scale(0.6);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(0) scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A check mark drawn along its path; the path sets pathLength="1". */
+.draw {
+  stroke-dasharray: 1;
+  animation: draw 200ms ease-out both;
+}
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
