@@ -8,10 +8,6 @@ Thumbs.db
 .idea/
 *.swp
 
-# Local tooling
-.claude/
-CLAUDE.md
-
 # Environment files (examples are committed)
 .env
 .env.*
@@ -43,6 +39,3 @@ coverage/
 next-env.d.ts
 .vercel/
 npm-debug.log*
-
-# Files some tools generate inside projects
-AGENTS.md
