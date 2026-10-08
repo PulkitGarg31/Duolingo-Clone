@@ -1,6 +1,8 @@
 "use client";
 
 import { motion } from "motion/react";
+import { Owl } from "@/components/mascot";
+import { Button } from "@/components/ui";
 import { useTheme } from "@/lib/theme/ThemeProvider";
 
 const COPY = {
@@ -41,7 +43,8 @@ function Waking({ slow }: { slow: boolean }) {
   const { reducedMotion } = useTheme();
   return (
     <>
-      <SleepingZs still={reducedMotion} />
+      {/* The sleeping pose draws its own floating z's. */}
+      <Owl pose="sleep" size={180} />
       <h2 className="text-title text-fg-strong">{COPY.wakingTitle}</h2>
       <p className="text-subtitle text-fg-2">{COPY.wakingBody}</p>
       <IndeterminateBar still={reducedMotion} />
@@ -53,34 +56,13 @@ function Waking({ slow }: { slow: boolean }) {
 function Unreachable({ onRetry }: { onRetry: () => void }) {
   return (
     <>
+      <Owl pose="sad" size={160} />
       <h2 className="text-title text-fg-strong">{COPY.failedTitle}</h2>
       <p className="text-subtitle text-fg-2">{COPY.failedBody}</p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="pressable mt-2 h-[50px] w-full max-w-[330px] rounded-md bg-primary px-6 text-label uppercase text-on-color shadow-[0_4px_0_var(--c-primary-lip)] [--lip:4px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus"
-      >
+      <Button fullWidth className="mt-2 max-w-[330px]" onClick={onRetry}>
         {COPY.retry}
-      </button>
+      </Button>
     </>
-  );
-}
-
-/** Three "z"s drifting up from a sleeper, staggered. */
-function SleepingZs({ still }: { still: boolean }) {
-  return (
-    <div aria-hidden="true" className="flex h-16 items-end gap-1 font-extrabold leading-none text-fg-3">
-      {[17, 24, 32].map((size, index) => (
-        <motion.span
-          key={size}
-          style={{ fontSize: size }}
-          animate={still ? undefined : { y: [0, -24], opacity: [0, 1, 0] }}
-          transition={{ duration: 2.4, delay: index * 0.6, repeat: Infinity, ease: "easeOut" }}
-        >
-          z
-        </motion.span>
-      ))}
-    </div>
   );
 }
 
@@ -90,7 +72,7 @@ function IndeterminateBar({ still }: { still: boolean }) {
     <div
       role="progressbar"
       aria-label="Waking up the server"
-      className="relative h-4 w-[280px] max-w-full overflow-hidden rounded-full bg-track"
+      className="relative mt-2 h-4 w-[280px] max-w-full overflow-hidden rounded-full bg-track"
     >
       <motion.div
         className="absolute inset-y-0 left-0 w-[30%] rounded-full bg-fill"
@@ -98,7 +80,7 @@ function IndeterminateBar({ still }: { still: boolean }) {
         animate={still ? undefined : { x: ["-100%", "334%"] }}
         transition={{ duration: 1.4, ease: "easeInOut", repeat: Infinity }}
       >
-        <span className="absolute inset-x-1 top-1 h-[30%] rounded-full bg-[var(--c-gloss)]" />
+        <span className="absolute inset-x-1 top-1 h-[30%] rounded-full bg-(--c-gloss)" />
       </motion.div>
     </div>
   );
