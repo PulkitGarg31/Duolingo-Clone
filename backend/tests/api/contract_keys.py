@@ -22,7 +22,7 @@ INTERFACE_KEYS: dict[str, frozenset[str]] = {
     # ---- system ----
     "HealthOut": names("status seeded bootId bootedAt serverTime version"),
     # ---- /me ----
-    "MeUser": names("id username displayName avatarColor timezone timezoneConfirmed joinedAt"),
+    "MeUser": names("id username displayName avatarColor timezone timezoneConfirmed joinedAt email isDemo"),
     "MeXp": names("total today thisWeek"),
     "MeStreak": names(
         "current longest status extendedToday frozenYesterday freezesEquipped maxFreezes nextMilestone"
@@ -146,6 +146,11 @@ INTERFACE_KEYS: dict[str, frozenset[str]] = {
     "ClockChangeOut": names("clock effects"),
     "DevLearnerPatchIn": names("hearts gems"),
     "DevResetOut": names("reset seededAt me"),
+    # ---- auth ----
+    "SignupIn": names("displayName email password timezone"),
+    "LoginIn": names("email password"),
+    "AuthOut": names("token expiresAt user"),
+    "LogoutOut": names("loggedOut"),
     # ---- errors ----
     "FieldError": names("field message kind"),
     "ProblemDetails": names(
@@ -178,7 +183,7 @@ CONTRACT_KEYS: dict[str, frozenset[str]] = {**INTERFACE_KEYS, **INLINE_OBJECT_KE
 
 # The bodies a client sends; every other object of the contract is something the API answers with.
 REQUEST_BODIES: frozenset[str] = names(
-    "StartSessionIn SettingsPatchIn PurchaseIn ClockAdvanceIn DevLearnerPatchIn MatchPairIn"
+    "StartSessionIn SettingsPatchIn PurchaseIn ClockAdvanceIn DevLearnerPatchIn SignupIn LoginIn MatchPairIn"
     " MultipleChoiceAnswer FillBlankAnswer TranslateAnswer MatchPairsAnswer TypeAnswerAnswer SkipAnswer"
     " CantListenAnswer"
 )
@@ -267,6 +272,8 @@ OBJECT_FIELDS: dict[str, dict[str, str]] = {
     "SyncEffectsOut": {"streak": "SyncStreakOut", "leagueResults": "LeagueResultOut[]"},
     "ClockChangeOut": {"clock": "ClockOut", "effects": "SyncEffectsOut"},
     "DevResetOut": {"me": "MeOut"},
+    # ---- auth ----
+    "AuthOut": {"user": "MeUser"},
     # ---- errors ----
     "ProblemDetails": {"errors": "FieldError[]"},
 }
@@ -274,6 +281,9 @@ OBJECT_FIELDS: dict[str, dict[str, str]] = {
 # Every endpoint (A.1): its operation id, method, path under /api/v1 and the type of its success body.
 ENDPOINTS: dict[str, tuple[str, str, str]] = {
     "getHealth": ("GET", "/health", "HealthOut"),
+    "signup": ("POST", "/auth/signup", "AuthOut"),
+    "login": ("POST", "/auth/login", "AuthOut"),
+    "logout": ("POST", "/auth/logout", "LogoutOut"),
     "getMe": ("GET", "/me", "MeOut"),
     "getSettings": ("GET", "/me/settings", "SettingsOut"),
     "updateSettings": ("PATCH", "/me/settings", "SettingsUpdateOut"),
@@ -362,7 +372,7 @@ UNION_VALUES: dict[str, frozenset[str] | frozenset[int]] = {
         " NODE_ALREADY_COMPLETED ALREADY_LEGENDARY NOTHING_TO_PRACTICE CHEST_LOCKED OUT_OF_HEARTS"
         " INSUFFICIENT_GEMS HEARTS_ALREADY_FULL MAX_FREEZES_EQUIPPED ITEM_UNAVAILABLE SESSION_NOT_ACTIVE"
         " SESSION_EXPIRED SESSION_INCOMPLETE ITEM_OUT_OF_ORDER ITEM_ALREADY_ANSWERED"
-        " LEAGUE_RESULT_NOT_READY INTERNAL_ERROR"
+        " LEAGUE_RESULT_NOT_READY INTERNAL_ERROR UNAUTHENTICATED INVALID_CREDENTIALS EMAIL_TAKEN"
     ),
 }
 
@@ -377,6 +387,8 @@ ME_EXAMPLE: dict[str, Any] = {
         "timezone": "Asia/Kolkata",
         "timezoneConfirmed": True,
         "joinedAt": "2026-09-08T06:30:00Z",
+        "email": None,
+        "isDemo": True,
     },
     "course": {
         "id": 1,

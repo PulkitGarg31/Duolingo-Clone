@@ -1,8 +1,8 @@
-"""Request dependencies: the database session, the clock, the current learner and the request context,
-plus the one rule for ids sent in the URL or in a header.
+"""Request dependencies: the database session, the current learner, their clock and the request
+context, plus the one rule for ids sent in the URL or in a header.
 
 FastAPI resolves each dependency at most once per request and shares the result, which is what
-gives a request exactly one session and one `now`.
+gives a request exactly one session, one learner and one `now`.
 """
 
 from collections.abc import Iterator
@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import Depends, Header, Path, Request, params
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import Field, PlainValidator
 from pydantic_core import PydanticCustomError
 from sqlalchemy.orm import Session
@@ -22,7 +23,7 @@ from app.core.errors import BotAccount, DevToolsDisabled, IdempotencyKeyRequired
 from app.domain.calendar import local_date
 from app.models import User
 from app.repositories import system_repo, user_repo
-from app.services import sync_service
+from app.services import auth_service, sync_service
 from app.services.context import RequestContext
 
 MAX_IDEMPOTENCY_KEY_LENGTH = 64
@@ -88,22 +89,31 @@ def get_real_clock() -> Clock:
     return SystemClock()
 
 
-def get_clock(db: DbDep, real_clock: Annotated[Clock, Depends(get_real_clock)]) -> Clock:
-    """Simulated time: real time plus the demo clock's forward-only offset."""
-    return OffsetClock(real_clock, timedelta(seconds=system_repo.offset_seconds(db)))
+RealClockDep = Annotated[Clock, Depends(get_real_clock)]
+
+# Documents the scheme in the API docs. It reports nothing itself: `bearer_token` decides.
+_bearer_scheme = HTTPBearer(
+    auto_error=False,
+    scheme_name="BearerToken",
+    description="A token from signup or login. Without one, requests act as the shared demo learner.",
+)
 
 
-ClockDep = Annotated[Clock, Depends(get_clock)]
+def bearer_token(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)],
+) -> str | None:
+    """The bearer token the request carries, or None when it sent no Authorization header at all.
+
+    A header that holds no bearer token ("Basic ...", an empty "Bearer") reads as an empty token, so
+    the request is refused rather than quietly served as the demo learner.
+    """
+    if "authorization" not in request.headers:
+        return None
+    return credentials.credentials if credentials is not None else ""
 
 
-def get_now(request: Request, clock: ClockDep) -> datetime:
-    """The request's single instant. The middleware also returns it in the X-Server-Time header."""
-    now = clock.now()
-    request.state.now = now
-    return now
-
-
-NowDep = Annotated[datetime, Depends(get_now)]
+BearerTokenDep = Annotated[str | None, Depends(bearer_token)]
 
 
 def get_boot(request: Request) -> BootInfo:
@@ -126,13 +136,22 @@ SeededDep = Annotated[bool, Depends(is_seeded)]
 def get_current_user(
     db: DbDep,
     settings: SettingsDep,
+    real_clock: RealClockDep,
+    token: BearerTokenDep,
     x_user_id: Annotated[str | None, Header(alias="X-User-Id", include_in_schema=False)] = None,
 ) -> User:
-    """The learner making the request.
+    """The learner making the request, in this order:
 
-    There is no sign-in: requests act as the default learner. Where the setting allows it (local
-    runs and tests), an X-User-Id header acts as another learner, which proves per-user isolation.
+    1. a bearer token: its account. An unknown, expired or revoked token is UNAUTHENTICATED, so the
+       client drops it, rather than a quiet switch to the demo learner;
+    2. where the setting allows it (local runs and tests), an X-User-Id header: that learner, which
+       proves per-user isolation;
+    3. otherwise the shared demo learner, so the demo works with no sign-in at all.
+
+    Tokens expire on real time, never on the learner's simulated clock.
     """
+    if token is not None:
+        return auth_service.account_for_token(db, token, real_clock.now())
     if settings.allow_user_header and x_user_id is not None:
         return _learner_with_id(db, x_user_id)
     user = user_repo.get_by_username(db, settings.default_username)
@@ -152,6 +171,25 @@ def _learner_with_id(db: Session, raw_id: str) -> User:
 
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
+
+
+def get_clock(user: CurrentUserDep, real_clock: RealClockDep) -> Clock:
+    """The learner's simulated time: real time plus their own forward-only offset."""
+    return OffsetClock(real_clock, timedelta(seconds=user.clock_offset_seconds))
+
+
+ClockDep = Annotated[Clock, Depends(get_clock)]
+
+
+def get_now(request: Request, clock: ClockDep) -> datetime:
+    """The request's single instant on the learner's clock. The middleware also returns it in the
+    X-Server-Time header, so only requests that resolved a learner carry that header."""
+    now = clock.now()
+    request.state.now = now
+    return now
+
+
+NowDep = Annotated[datetime, Depends(get_now)]
 
 
 def get_ctx(db: DbDep, user: CurrentUserDep, now: NowDep, settings: SettingsDep) -> RequestContext:

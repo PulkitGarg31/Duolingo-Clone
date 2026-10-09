@@ -9,6 +9,7 @@ deliberately knows nothing about the web framework.
 from collections.abc import Mapping
 from datetime import datetime
 from enum import StrEnum
+from types import MappingProxyType
 from typing import ClassVar
 
 from app.domain.enums import EndReason, SessionStatus
@@ -25,6 +26,8 @@ class ErrorCode(StrEnum):
     INVALID_ANSWER = "INVALID_ANSWER"
     IDEMPOTENCY_KEY_REUSED = "IDEMPOTENCY_KEY_REUSED"
     IDEMPOTENCY_KEY_REQUIRED = "IDEMPOTENCY_KEY_REQUIRED"
+    UNAUTHENTICATED = "UNAUTHENTICATED"
+    INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     BOT_ACCOUNT = "BOT_ACCOUNT"
@@ -46,6 +49,7 @@ class ErrorCode(StrEnum):
     ITEM_OUT_OF_ORDER = "ITEM_OUT_OF_ORDER"
     ITEM_ALREADY_ANSWERED = "ITEM_ALREADY_ANSWERED"
     LEAGUE_RESULT_NOT_READY = "LEAGUE_RESULT_NOT_READY"
+    EMAIL_TAKEN = "EMAIL_TAKEN"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
@@ -56,6 +60,8 @@ class AppError(Exception):
     status: ClassVar[int]
     title: ClassVar[str]
     default_detail: ClassVar[str]
+    # Response headers the status calls for, such as WWW-Authenticate on a 401.
+    headers: ClassVar[Mapping[str, str]] = MappingProxyType({})
 
     def __init__(self, detail: str | None = None, *, extra: Mapping[str, ProblemValue] | None = None) -> None:
         self.detail = detail or self.default_detail
@@ -69,6 +75,13 @@ class AppError(Exception):
 
 class BadRequest(AppError):
     status = 400
+
+
+class Unauthorized(AppError):
+    """The request needs credentials it didn't bring, or brought ones that are no good."""
+
+    status = 401
+    headers = MappingProxyType({"WWW-Authenticate": "Bearer"})
 
 
 class Forbidden(AppError):
@@ -87,13 +100,30 @@ class Unprocessable(AppError):
     status = 422
 
 
-# ---- 400 / 403 / 404 / 405 ----
+# ---- 400 / 401 / 403 / 404 / 405 ----
 
 
 class IdempotencyKeyRequired(BadRequest):
     code = ErrorCode.IDEMPOTENCY_KEY_REQUIRED
     title = "Idempotency key required"
     default_detail = "Send an Idempotency-Key header of at most 64 characters with every purchase."
+
+
+class Unauthenticated(Unauthorized):
+    """The bearer token is unknown, expired or revoked: the client drops it."""
+
+    code = ErrorCode.UNAUTHENTICATED
+    title = "Not signed in"
+    default_detail = "You were signed out. Log in again to continue."
+
+
+class InvalidCredentials(Unauthorized):
+    """A login whose email is unknown or whose password is wrong. Both get this same answer, so the
+    response never tells whether an account exists."""
+
+    code = ErrorCode.INVALID_CREDENTIALS
+    title = "Invalid credentials"
+    default_detail = "That email and password don't match an account."
 
 
 class BotAccount(Forbidden):
@@ -249,6 +279,15 @@ class LeagueResultNotReady(Conflict):
     code = ErrorCode.LEAGUE_RESULT_NOT_READY
     title = "League result not ready"
     default_detail = "This league week hasn't finished yet."
+
+
+# ---- 409: accounts ----
+
+
+class EmailTaken(Conflict):
+    code = ErrorCode.EMAIL_TAKEN
+    title = "Email taken"
+    default_detail = "An account with this email already exists. Log in instead."
 
 
 # ---- 422 ----

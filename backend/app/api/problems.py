@@ -110,7 +110,7 @@ def _render(
 
 
 async def _app_error(request: Request, exc: AppError) -> JSONResponse:
-    return _render(request, exc)
+    return _render(request, exc, headers=exc.headers)
 
 
 async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:

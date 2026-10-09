@@ -18,7 +18,7 @@ from app.api.problems import register_problem_handlers, use_problem_media_type
 from app.api.v1.router import API_V1_PREFIX, OPENAPI_TAGS, api_v1_router
 from app.core.clock import SystemClock
 from app.core.config import Settings, get_settings
-from app.core.db import SessionLocal, engine
+from app.core.db import SessionLocal, create_tables, engine
 from app.models import Base
 from app.seed.loader import seed_if_empty
 from app.services import reference
@@ -32,9 +32,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     read the course content and catalogues, so the first requests don't pay for that.
 
     The database is the environment's (the engine in app.core.db, which also created its folder).
-    The host's disk is ephemeral, so a boot may well start from no file at all.
+    The host's disk is ephemeral, so a boot may well start from no file at all. A file left by a
+    version with another schema is dropped and seeded again: there are no migrations.
     """
-    Base.metadata.create_all(engine)
+    if create_tables(engine, Base.metadata):
+        logger.warning("the database was built for another schema: rebuilt it from scratch")
     with SessionLocal() as db:
         seeded_now = seed_if_empty(db, real_now=SystemClock().now(), settings=app.state.settings)
         db.commit()
@@ -78,6 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origin_regex=settings.cors_origin_regex or None,
         allow_methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
         allow_headers=[
+            "Authorization",
             "Content-Type",
             "Idempotency-Key",
             REQUEST_ID_HEADER,

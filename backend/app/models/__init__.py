@@ -1,8 +1,9 @@
 """SQLAlchemy models: table shapes and constraints only, no behaviour.
 
-Importing this package registers all 30 tables on `Base.metadata`.
+Importing this package registers all 31 tables on `Base.metadata`.
 """
 
+from app.models.auth import AuthSession
 from app.models.base import Base
 from app.models.content import (
     Course,
@@ -28,6 +29,7 @@ __all__ = [
     "AchievementTier",
     "ActivityDay",
     "AppState",
+    "AuthSession",
     "Base",
     "BotProfile",
     "Course",

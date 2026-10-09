@@ -1,7 +1,8 @@
 """Learners and bots: users plus their 1:1 extension tables.
 
 A bot is simply a user with a `bot_profiles` row; there is no is_bot flag to keep in sync. Only
-humans have `user_settings` and `user_stats`, and only humans write ledger rows.
+humans have `user_settings` and `user_stats`, and only humans write ledger rows. A human with an
+email and a password hash is an account that can log in; the demo learner and the bots have neither.
 """
 
 from __future__ import annotations
@@ -20,7 +21,12 @@ _DAILY_GOAL_LIST = ", ".join(str(goal) for goal in DAILY_GOAL_OPTIONS)
 
 
 class User(Base):
-    """An account that appears on the leaderboard: the human learner or a seeded league bot."""
+    """Anyone who appears on a leaderboard: a human learner or a seeded league bot.
+
+    Each human runs on a simulated clock of their own: real UTC plus `clock_offset_seconds`. The
+    offset only ever grows, so rows written earlier can never end up in the future; resetting the
+    learner's progress is the only way back to 0.
+    """
 
     __tablename__ = "users"
 
@@ -37,6 +43,9 @@ class User(Base):
         sa.ForeignKey("courses.id", ondelete="RESTRICT"), index=True
     )
     joined_at: Mapped[datetime]
+    email: Mapped[str | None] = mapped_column(sa.String(254))  # stored trimmed and lowercased
+    password_hash: Mapped[str | None] = mapped_column(sa.String(255))  # 'scrypt$16384$8$1$<salt>$<hash>'
+    clock_offset_seconds: Mapped[int] = mapped_column(server_default=sa.text("0"))
 
     settings: Mapped[UserSettings | None] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
@@ -50,10 +59,17 @@ class User(Base):
 
     __table_args__ = (
         sa.UniqueConstraint("username"),
+        # One account per address; the many users without one (NULL) don't collide.
+        sa.UniqueConstraint("email"),
         sa.CheckConstraint("username = lower(username)", name="username_lower"),
         sa.CheckConstraint(
             "length(avatar_color) = 7 AND substr(avatar_color, 1, 1) = '#'", name="avatar_color_hex"
         ),
+        # Lowercased on the way in, so the unique key is case-insensitive.
+        sa.CheckConstraint("email = lower(email)", name="email_lower"),
+        # Credentials come as a pair: an account has both, the demo learner and the bots neither.
+        sa.CheckConstraint("(email IS NULL) = (password_hash IS NULL)", name="credentials_pair"),
+        sa.CheckConstraint("clock_offset_seconds >= 0", name="offset_forward_only"),
     )
 
 

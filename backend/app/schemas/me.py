@@ -12,7 +12,7 @@ from app.schemas.settings import SettingsOut
 
 
 class MeUser(ApiModel):
-    """The signed-in learner."""
+    """The learner making the request: an account, or the shared demo learner."""
 
     id: int
     username: str
@@ -21,6 +21,8 @@ class MeUser(ApiModel):
     timezone: str
     timezone_confirmed: bool  # the browser's time zone has been adopted once
     joined_at: datetime
+    email: str | None  # null for the demo learner
+    is_demo: bool  # the shared demo learner, served when no token is sent
 
 
 class MeXp(ApiModel):
@@ -88,7 +90,7 @@ class DevInfo(ApiModel):
     """Demo tools state; the whole object is null when the tools are turned off."""
 
     enabled: bool
-    clock_offset_seconds: int
+    clock_offset_seconds: int  # how far the learner's own clock runs ahead of real time
 
 
 class MeOut(ApiModel):
