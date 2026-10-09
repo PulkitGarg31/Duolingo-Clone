@@ -27,7 +27,7 @@ interface MoreMenuProps {
 
 /**
  * The last menu item, MORE: settings, the dark mode switch, help, about, and the account: LOG OUT when signed
- * in, a "Demo account" note with SIGN IN on the shared demo learner.
+ * in, a "Demo account" note with CREATE A PROFILE and SIGN IN in a private demo.
  */
 export function MoreMenu({ layout, user }: MoreMenuProps) {
   const popover = useHoverPopover();
@@ -101,14 +101,14 @@ function MoreMenuContent({ user, onClose }: { user: MeUser | undefined; onClose:
   );
 }
 
-/** The shared demo learner: a short note on what that means, and the ways to an account of one's own. */
+/** A private demo: a short note on what that means, and the ways to an account of one's own. */
 function DemoAccountEntries({ onClose }: { onClose: () => void }) {
   return (
     <>
       <div className="px-5 pt-2 pb-1">
         <p className="text-caption text-fg-3 uppercase">Demo account</p>
         <p className="mt-1 max-w-[220px] text-[13px] leading-4 font-semibold text-fg-3">
-          Everyone trying the demo shares this progress.
+          This demo is private to this browser. A profile keeps your course on every device.
         </p>
       </div>
       <ul>

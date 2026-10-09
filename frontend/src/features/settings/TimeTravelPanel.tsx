@@ -10,7 +10,7 @@ import { SETTINGS_TARGETS } from "./useSettingsSections";
 interface TimeTravelPanelProps {
   /** The simulated clock; undefined while it loads. */
   clock: ClockOut | undefined;
-  /** The shared demo learner (RESET DEMO DATA) rather than an account (RESET MY PROGRESS). */
+  /** A demo learner (RESET DEMO DATA) rather than an account (RESET MY PROGRESS). */
   isDemo: boolean;
   running: DemoTask | null;
   /** Holds every button while a task runs or the learner's numbers refresh after one. */

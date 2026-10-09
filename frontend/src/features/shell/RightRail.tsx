@@ -22,8 +22,8 @@ interface RightRailProps {
 }
 
 /**
- * The right column of wide screens: the stats row, then the page's own stack of cards (with the guest card for
- * the demo learner), then the footer. It sticks to the top and scrolls on its own when taller than the window.
+ * The right column of wide screens: the stats row, then the page's own stack of cards (with the guest card in a
+ * private demo), then the footer. It sticks to the top and scrolls on its own when taller than the window.
  */
 export function RightRail({ pathname, me, quests, slotRef, className }: RightRailProps) {
   const { width, blocks } = railLayoutFor(pathname, { guest: me?.user.isDemo });

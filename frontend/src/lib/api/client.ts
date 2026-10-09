@@ -16,8 +16,8 @@ export interface ApiFetchOptions {
   /** Sent as the `Idempotency-Key` header (purchases). */
   idempotencyKey?: string;
   /**
-   * The session token to send instead of the stored one (logout names the token it ends). Null sends none,
-   * which makes the request as the demo learner.
+   * The session token to send instead of the stored one (logout names the token it ends). Null sends none:
+   * for the auth calls, which act as no learner yet.
    */
   token?: string | null;
   timeoutMs?: number;
@@ -25,9 +25,9 @@ export interface ApiFetchOptions {
 
 /**
  * The only function that talks to the API. It resolves with the parsed JSON body and rejects with an `ApiError`.
- * A signed-in learner's token goes out as `Authorization: Bearer …`; without one the server answers as the demo
- * learner. Every response feeds the server clock and the restart watch; a failure that suggests the server fell
- * asleep re-arms the wake gate, and an UNAUTHENTICATED answer drops the token it was sent with.
+ * The learner's token (an account's or a guest's) goes out as `Authorization: Bearer …`. Every response feeds
+ * the server clock and the restart watch; a failure that suggests the server fell asleep re-arms the wake gate,
+ * and an UNAUTHENTICATED answer drops the token it was sent with.
  */
 export async function apiFetch<T>(path: string, opts: ApiFetchOptions = {}): Promise<T> {
   // Read when the call starts, so the 401 below drops exactly the token this request carried.
@@ -54,7 +54,7 @@ export async function apiFetch<T>(path: string, opts: ApiFetchOptions = {}): Pro
   } catch (e) {
     const error = e instanceof ApiError ? e : ApiError.network(e);
     if (isRetryable(error)) wakeGate.rearm();
-    // The session expired or was revoked (a server restart wipes every account): the app signs out.
+    // The session expired or was revoked (a server restart wipes every account and guest): the app recovers.
     if (token && isApiError(error, "UNAUTHENTICATED")) tokenStore.expire(token);
     throw error;
   } finally {

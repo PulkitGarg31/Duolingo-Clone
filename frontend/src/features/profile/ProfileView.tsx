@@ -13,7 +13,7 @@ interface ProfileViewProps {
   activity?: ReactNode;
   /** The signed-in learner's email, shown on their own profile. */
   email?: string | null;
-  /** Under the header: the guest card on the demo learner's own profile, where the right rail is hidden. */
+  /** Under the header: the guest card on a demo learner's own profile, where the right rail is hidden. */
   notice?: ReactNode;
 }
 

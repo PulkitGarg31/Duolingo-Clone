@@ -4,11 +4,11 @@ import { Button, ButtonLink, Input } from "@/components/ui";
 import type { ApiError } from "@/lib/api/errors";
 import type { SignupIn } from "@/lib/api/types";
 import { useEnterDemo, useSignup } from "@/lib/queries/mutations";
+import { deviceTimeZoneOrNull } from "@/lib/time/deviceTimeZone";
 import { AuthFrame, DemoServerNote, OrDivider } from "./AuthFrame";
 import {
   DISPLAY_NAME_MAX,
   PASSWORD_MAX,
-  deviceTimeZoneOrNull,
   formErrorsFromProblem,
   onlyTimezoneRejected,
   signupBody,

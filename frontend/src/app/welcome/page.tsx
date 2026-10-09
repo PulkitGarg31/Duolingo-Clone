@@ -15,7 +15,7 @@ import { useEnterDemo } from "@/lib/queries/mutations";
 /*
  * The public landing page (MORE → ABOUT THIS CLONE, the 404 page, and where signing out lands). It is static:
  * nothing here waits for the API, so it renders even while the server sleeps. GET STARTED signs up, I ALREADY
- * HAVE AN ACCOUNT logs in, and TRY THE DEMO opens the path as the shared demo learner.
+ * HAVE AN ACCOUNT logs in, and TRY THE DEMO opens the path in a private demo of the visitor's own.
  */
 
 const COURSES = [
@@ -108,8 +108,8 @@ function Hero() {
 }
 
 /**
- * The instant way in: no account, straight to the lessons as the shared demo learner. A signed-in visitor who
- * picks it is signed out first.
+ * The instant way in: no account, straight to the lessons in a private demo (a guest already playing one goes
+ * back to it). A signed-in visitor who picks it is signed out first.
  */
 function DemoPath() {
   const enterDemo = useEnterDemo();

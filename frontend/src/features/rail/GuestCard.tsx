@@ -2,8 +2,8 @@ import { ButtonLink } from "@/components/ui";
 import { RailCard } from "./RailCard";
 
 /**
- * Duolingo's guest card, for the shared demo learner: progress made here belongs to everyone trying the demo,
- * so it invites the visitor to an account of their own.
+ * Duolingo's guest card, for a private demo: its progress lives only in this browser, so the card invites the
+ * visitor to an account of their own. A new account starts fresh; the demo's progress is not carried over.
  */
 export function GuestCard({ className }: { className?: string }) {
   return (

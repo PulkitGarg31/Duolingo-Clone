@@ -23,7 +23,7 @@ const PAGE_CARDS: ReadonlyArray<readonly [route: string, cards: readonly RailBlo
 const DEFAULT_CARDS: readonly RailBlock[] = ["quests"];
 
 export interface RailOptions {
-  /** The shared demo learner: the guest card ("Create a profile…") closes the page's stack. */
+  /** A demo learner (a guest): the guest card ("Create a profile…") closes the page's stack. */
   guest?: boolean;
 }
 

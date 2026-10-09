@@ -10,6 +10,7 @@ import type {
   ClockOut,
   CompletionOut,
   CoursesOut,
+  DemoIn,
   DevLearnerPatchIn,
   DevResetOut,
   GuidebookOut,
@@ -73,6 +74,16 @@ const LOGOUT_TIMEOUT_MS = 5_000;
 /** Revokes `token` on the server. Always answers 200, even for a token the server no longer knows. */
 export function logout(token: string): Promise<LogoutOut> {
   return apiFetch<LogoutOut>("/auth/logout", { method: "POST", token, timeoutMs: LOGOUT_TIMEOUT_MS });
+}
+
+/**
+ * Creates a guest, the visitor's private copy of the demo (the sample learner's history), and signs it in.
+ * `timezone` is the device's IANA zone; without one the guest's days follow the server's seed zone until the
+ * app adopts the device's. Errors: VALIDATION_ERROR (a zone the server does not know).
+ */
+export function startDemo(timezone: string | null): Promise<AuthOut> {
+  const body: DemoIn = timezone ? { timezone } : {};
+  return apiFetch<AuthOut>("/auth/demo", { json: body, token: null });
 }
 
 // ---------------- /me

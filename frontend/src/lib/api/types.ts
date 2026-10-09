@@ -54,8 +54,8 @@ export interface HealthOut { status: "ok"; seeded: boolean; bootId: string; boot
 export interface MeUser {
   id: number; username: string; displayName: string; avatarColor: string;
   timezone: string; timezoneConfirmed: boolean; joinedAt: ISODateTime;
-  email: string | null;                                    // null for the demo learner
-  isDemo: boolean;                                         // the shared demo learner (no token sent)
+  email: string | null;                                    // null for the demo learner and guests
+  isDemo: boolean;                                         // a guest's private demo, or the shared one (no token)
 }
 export interface MeXp { total: number; today: number; thisWeek: number; }
 export interface MeStreak {
@@ -282,6 +282,7 @@ export interface SignupIn {                                // POST /auth/signup
   timezone?: string;                                       // IANA zone; the seed zone when omitted
 }
 export interface LoginIn { email: string; password: string; }   // POST /auth/login
+export interface DemoIn { timezone?: string; }            // POST /auth/demo; IANA zone, the seed zone when omitted
 export interface AuthOut { token: string; expiresAt: ISODateTime; user: MeUser; }
 export interface LogoutOut { loggedOut: true; }
 

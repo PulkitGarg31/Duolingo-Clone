@@ -19,7 +19,7 @@ interface AccountSectionProps {
 /**
  * The account fields. The API cannot rename a learner or change sign-in details, so the display name and the
  * email are read-only; the time zone is the one editable field. A signed-in learner can log out here (phones
- * have no MORE menu); the shared demo learner is invited to create a profile instead.
+ * have no MORE menu); a demo learner is invited to create a profile instead.
  */
 export function AccountSection({ user, timezone, onTimezoneChange }: AccountSectionProps) {
   return (

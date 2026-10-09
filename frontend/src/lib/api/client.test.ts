@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tokenStore } from "@/lib/auth/tokenStore";
 import { API_BASE_URL, apiFetch } from "./client";
-import { login, logout, signup } from "./endpoints";
+import { login, logout, signup, startDemo } from "./endpoints";
 import { isApiError } from "./errors";
 
 function problem(status: number, code: string): Response {
@@ -129,5 +129,26 @@ describe("auth endpoints", () => {
       `${API_BASE_URL}/auth/logout`,
       expect.objectContaining({ method: "POST", headers: { Accept: "application/json", Authorization: "Bearer tok-ending" } }),
     );
+  });
+
+  it("starting a demo sends the device's zone, and no token, so it can never act as a previous learner", async () => {
+    tokenStore.set("tok-stale", "guest");
+    const sent: [string, RequestInit][] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        sent.push([url, init]);
+        return Response.json({ token: "tok-guest" }, { status: 201 });
+      }),
+    );
+
+    await startDemo("Europe/Madrid");
+    await startDemo(null);
+
+    expect(sent.map(([url, init]) => [url, init.method, init.body])).toEqual([
+      [`${API_BASE_URL}/auth/demo`, "POST", JSON.stringify({ timezone: "Europe/Madrid" })],
+      [`${API_BASE_URL}/auth/demo`, "POST", "{}"],
+    ]);
+    expect(sent.map(([, init]) => (init.headers as Record<string, string>).Authorization)).toEqual([undefined, undefined]);
   });
 });

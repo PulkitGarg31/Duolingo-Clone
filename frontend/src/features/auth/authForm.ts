@@ -172,12 +172,3 @@ export function onlyTimezoneRejected(error: ApiError): boolean {
   if (error.code !== "VALIDATION_ERROR" || error.errors.length === 0) return false;
   return error.errors.every(({ field }) => bodyField(field) === "timezone");
 }
-
-/** The browser's IANA zone, or null when it cannot tell. */
-export function deviceTimeZoneOrNull(): string | null {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
-  } catch {
-    return null;
-  }
-}

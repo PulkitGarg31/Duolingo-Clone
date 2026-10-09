@@ -5,14 +5,15 @@ import { MotionConfig } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
+import { guestSession } from "@/lib/auth/guestSession";
+import { recoverFromRefusedToken } from "@/lib/auth/sessionExpiry";
 import { tokenStore } from "@/lib/auth/tokenStore";
-import { SIGNED_OUT_HOME } from "@/lib/queries/mutations";
 import { createQueryClient, onUnhandledActionError, pauseWhileServerAsleep } from "@/lib/queries/queryClient";
 import { ThemeProvider, useTheme } from "@/lib/theme/ThemeProvider";
 
 /**
- * App-wide providers. None of them calls the API: fetching starts inside ServerWakeGate, which wraps only the
- * app's route groups, so the landing page, the kitchen sink and the 404 page render without a server.
+ * App-wide providers. None of them calls the API on its own: fetching starts inside ServerWakeGate, which wraps
+ * only the app's route groups, so the landing page, the kitchen sink and the 404 page render without a server.
  */
 export function Providers({ children }: { children: ReactNode }) {
   // One client per browser tab, created on first render and kept for the tab's lifetime.
@@ -25,7 +26,7 @@ export function Providers({ children }: { children: ReactNode }) {
         <MotionPreferences>
           <ToastProvider>
             <ActionErrorToasts />
-            <SessionExpiryRedirect />
+            <RefusedTokenRecovery />
             {children}
           </ToastProvider>
         </MotionPreferences>
@@ -52,21 +53,25 @@ function ActionErrorToasts() {
 }
 
 /**
- * The server refused the session token (expired, revoked, or the server restarted and lost every account).
- * apiFetch has dropped it already; the cached screens belong to that account, so they go too, and the visitor
- * lands on the welcome page to sign in again or carry on with the demo.
+ * The server refused the session token (expired, revoked, or the server restarted and lost every account and
+ * guest). apiFetch has dropped it already, and the cached screens belonging to it go too. A guest gets a new
+ * private demo and stays in the app; an account holder lands on the welcome page to sign in again or try the
+ * demo (see `recoverFromRefusedToken`).
  */
-function SessionExpiryRedirect() {
+function RefusedTokenRecovery() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const { toast } = useToast();
   useEffect(
     () =>
-      tokenStore.onExpire(() => {
-        queryClient.clear();
-        toast({ tone: "info", message: "You were signed out" });
-        router.replace(SIGNED_OUT_HOME);
-      }),
+      tokenStore.onExpire((kind) =>
+        recoverFromRefusedToken(kind, {
+          clearCache: () => queryClient.clear(),
+          startGuest: () => guestSession.ensure(),
+          toast: (message) => toast({ tone: "info", message }),
+          goTo: (href) => router.replace(href),
+        }),
+      ),
     [queryClient, router, toast],
   );
   return null;

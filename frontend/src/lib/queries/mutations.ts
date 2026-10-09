@@ -83,12 +83,13 @@ export const SIGNED_IN_HOME = "/learn";
 export const SIGNED_OUT_HOME = "/welcome";
 
 /**
- * Hands the app to another learner: stores the new session token (null for the demo learner) and empties the
- * cache, since every cached screen belongs to the previous learner. Pages loaded next fetch afresh.
+ * Hands the app to another learner: stores the new account's session token, or drops the token (null), after
+ * which the next app page starts a private demo. Either way the cache is emptied, since every cached screen
+ * belongs to the previous learner. Pages loaded next fetch afresh.
  */
 export function switchLearner(queryClient: QueryClient, token: string | null): void {
   if (token === null) tokenStore.clear();
-  else tokenStore.set(token);
+  else tokenStore.set(token, "account");
   queryClient.clear();
 }
 
@@ -152,7 +153,7 @@ export function logoutMutation(queryClient: QueryClient, onSignedOut: () => void
   };
 }
 
-/** Signs out (`logout.mutate()`) and goes to the landing page. The tab returns to the demo learner. */
+/** Signs out (`logout.mutate()`) and goes to the landing page. The next app page starts a private demo. */
 export function useLogout(): UseMutationResult<LogoutOut | null, ApiError, void> {
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -160,14 +161,15 @@ export function useLogout(): UseMutationResult<LogoutOut | null, ApiError, void>
 }
 
 /**
- * "Try the demo": returns the click handler for a link to the path. A signed-in visitor is signed out on the
- * spot (the server is told in the background) and the tab returns to the shared demo learner; a visitor who is
- * not signed in just follows the link.
+ * "Try the demo": returns the click handler for a link to the path. A guest just follows the link, back to the
+ * same private demo, and so does a visitor with no token yet (the path starts a demo for them). An account
+ * holder is signed out on the spot (the server is told in the background), and the path then starts a private
+ * demo in their place.
  */
 export function useEnterDemo(): () => void {
   const queryClient = useQueryClient();
   return useCallback(() => {
-    if (tokenStore.get() === null) return;
+    if (tokenStore.kind() !== "account") return;
     void revokeSession();
     switchLearner(queryClient, null);
   }, [queryClient]);
@@ -522,8 +524,8 @@ export function usePatchDevLearner(): UseMutationResult<MeOut, ApiError, DevLear
 }
 
 /**
- * Resets the caller's progress and clock, and no one else's: the demo learner gets the sample history back, an
- * account starts over at Unit 1.
+ * Resets the caller's progress and clock, and no one else's: a guest's private demo gets the sample history back,
+ * an account starts over at Unit 1.
  */
 export function useResetDemo(): UseMutationResult<DevResetOut, ApiError, void> {
   return useDevMutation(() => resetDemo());

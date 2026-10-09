@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { TOKEN_STORAGE_KEY, createTokenStore } from "./tokenStore";
+import { TOKEN_KIND_STORAGE_KEY, TOKEN_STORAGE_KEY, createTokenStore } from "./tokenStore";
 
-function memoryStorage(saved?: string) {
+function memoryStorage(saved?: string, savedKind?: string) {
   const items = new Map<string, string>(saved ? [[TOKEN_STORAGE_KEY, saved]] : []);
+  if (savedKind !== undefined) items.set(TOKEN_KIND_STORAGE_KEY, savedKind);
   return {
     items,
     getItem: vi.fn((key: string) => items.get(key) ?? null),
@@ -20,13 +21,15 @@ describe("token store", () => {
     expect(createTokenStore(() => memoryStorage()).get()).toBeNull();
   });
 
-  it("picks up the token saved by an earlier visit, reading storage once", () => {
-    const storage = memoryStorage("tok-saved");
+  it("picks up the token saved by an earlier visit, reading storage on the first call only", () => {
+    const storage = memoryStorage("tok-saved", "guest");
     const store = createTokenStore(() => storage);
 
     expect(store.get()).toBe("tok-saved");
+    const reads = storage.getItem.mock.calls.length;
     expect(store.get()).toBe("tok-saved");
-    expect(storage.getItem).toHaveBeenCalledTimes(1);
+    expect(store.kind()).toBe("guest");
+    expect(storage.getItem).toHaveBeenCalledTimes(reads);
   });
 
   it("saves the token under owlingo.token and removes it on clear", () => {
@@ -77,8 +80,75 @@ describe("token store", () => {
   });
 });
 
+describe("token kind", () => {
+  it("has no kind without a token", () => {
+    expect(createTokenStore(() => memoryStorage()).kind()).toBeNull();
+  });
+
+  it("saves the kind under owlingo.tokenKind next to the token, an account's unless told otherwise", () => {
+    const storage = memoryStorage();
+    const store = createTokenStore(() => storage);
+
+    store.set("tok-guest", "guest");
+    expect([store.get(), store.kind()]).toEqual(["tok-guest", "guest"]);
+    expect(storage.items.get("owlingo.tokenKind")).toBe("guest");
+
+    store.set("tok-ana");
+    expect([store.get(), store.kind()]).toEqual(["tok-ana", "account"]);
+    expect(storage.items.get("owlingo.tokenKind")).toBe("account");
+  });
+
+  it("forgets the kind with the token", () => {
+    const storage = memoryStorage("tok-guest", "guest");
+    const store = createTokenStore(() => storage);
+
+    store.clear();
+
+    expect(store.kind()).toBeNull();
+    expect(storage.items.has(TOKEN_KIND_STORAGE_KEY)).toBe(false);
+  });
+
+  it("picks up a guest token saved by an earlier visit", () => {
+    const store = createTokenStore(() => memoryStorage("tok-guest", "guest"));
+
+    expect([store.get(), store.kind()]).toEqual(["tok-guest", "guest"]);
+  });
+
+  it("reads a token saved without a valid kind as an account's, as every token was before guests", () => {
+    expect(createTokenStore(() => memoryStorage("tok-old")).kind()).toBe("account");
+    expect(createTokenStore(() => memoryStorage("tok-odd", "visitor")).kind()).toBe("account");
+  });
+
+  it("ignores a kind saved without a token", () => {
+    expect(createTokenStore(() => memoryStorage(undefined, "guest")).kind()).toBeNull();
+  });
+
+  it("keeps the kind for this tab when storage throws", () => {
+    const store = createTokenStore(blockedStorage);
+
+    store.set("tok-guest", "guest");
+
+    expect([store.get(), store.kind()]).toEqual(["tok-guest", "guest"]);
+  });
+
+  it("tells subscribers about every change of token", () => {
+    const store = createTokenStore(() => memoryStorage());
+    const changed = vi.fn();
+    const unsubscribe = store.subscribe(changed);
+
+    store.set("tok-guest", "guest");
+    store.expire("tok-guest");
+    store.set("tok-ana");
+    store.clear();
+    unsubscribe();
+    store.set("tok-later");
+
+    expect(changed).toHaveBeenCalledTimes(4);
+  });
+});
+
 describe("token expiry", () => {
-  it("drops the current token and tells the subscribers once", () => {
+  it("drops the current token and tells the subscribers once, naming an account's token", () => {
     const storage = memoryStorage("tok-1");
     const store = createTokenStore(() => storage);
     const listener = vi.fn();
@@ -90,6 +160,20 @@ describe("token expiry", () => {
     expect(store.get()).toBeNull();
     expect(storage.items.has(TOKEN_STORAGE_KEY)).toBe(false);
     expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith("account");
+  });
+
+  it("tells the subscribers when the dropped token was a guest's", () => {
+    const storage = memoryStorage("tok-guest", "guest");
+    const store = createTokenStore(() => storage);
+    const listener = vi.fn();
+    store.onExpire(listener);
+
+    expect(store.expire("tok-guest")).toBe(true);
+
+    expect(listener).toHaveBeenCalledExactlyOnceWith("guest");
+    expect([store.get(), store.kind()]).toEqual([null, null]);
+    expect(storage.items.has(TOKEN_KIND_STORAGE_KEY)).toBe(false);
   });
 
   it("leaves a newer token alone when an old request comes back refused", () => {
