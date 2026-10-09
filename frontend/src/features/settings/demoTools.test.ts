@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ClockChangeOut, SyncEffectsOut } from "@/lib/api/types";
+import type { ClockChangeOut, LeagueResultOut, SyncEffectsOut } from "@/lib/api/types";
 import {
   clockToast,
   formatOffset,
@@ -8,6 +8,7 @@ import {
   learnerToast,
   mergeEffects,
   nextDayCallsToSkipADay,
+  weekResultToShow,
 } from "./demoTools";
 
 const DAY = 86_400;
@@ -143,5 +144,25 @@ describe("learner shortcuts", () => {
     expect(learnerToast("drainHearts", { ...me, hearts: { current: 0, max: 5 } })).toBe("Hearts set to 0.");
     expect(learnerToast("refillHearts", { ...me, hearts: { current: 5, max: 5 } })).toBe("Hearts set to 5.");
     expect(learnerToast("addGems", { ...me, gems: 1320 })).toBe("+500 gems added.");
+  });
+});
+
+describe("weekResultToShow", () => {
+  function result(membershipId: number): LeagueResultOut {
+    const silver = { tier: 2, name: "Silver", color: "#C9D6E2" };
+    return { membershipId, weekStart: "2026-10-05", league: silver, finalRank: 18, finalXp: 57, outcome: "stayed", newLeague: silver, seen: false };
+  }
+
+  it("shows the result of a week a jump just finished", () => {
+    expect(weekResultToShow(result(31), [31])).toEqual(result(31));
+  });
+
+  it("leaves any other unseen result to the path", () => {
+    expect(weekResultToShow(result(14), [31])).toBeNull();
+    expect(weekResultToShow(result(14), [])).toBeNull();
+  });
+
+  it("shows nothing once the result is acknowledged", () => {
+    expect(weekResultToShow(null, [31])).toBeNull();
   });
 });

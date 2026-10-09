@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useToast } from "@/components/ui";
 import { LegendaryIntroModal } from "@/features/path/LegendaryIntroModal";
+import { useSingleFlight } from "@/features/shell/singleFlight";
 import type { PathNodeOut, StartSessionIn } from "@/lib/api/types";
 import { useMe, usePath } from "@/lib/queries/hooks";
 import { useStartSession } from "@/lib/queries/mutations";
@@ -32,17 +33,21 @@ export function PracticePage() {
   const [timedOpen, setTimedOpen] = useState(false);
   const [legendary, setLegendary] = useState<LegendaryChoice>(NO_CHOICE);
   const starting = start.isPending ? start.variables.kind : null;
+  const once = useSingleFlight();
 
+  // One start at a time: a double click opens one lesson, not two history entries for it.
   function begin(body: StartSessionIn) {
-    if (start.isPending) return;
-    start.mutate(body, {
-      onError: (error) => {
-        setTimedOpen(false);
-        setLegendary((choice) => ({ ...choice, open: false }));
-        const message = startErrorMessage(error);
-        if (message) toast({ tone: "warning", message });
-      },
-    });
+    once((done) =>
+      start.mutate(body, {
+        onError: (error) => {
+          setTimedOpen(false);
+          setLegendary((choice) => ({ ...choice, open: false }));
+          const message = startErrorMessage(error);
+          if (message) toast({ tone: "warning", message });
+        },
+        onSettled: done,
+      }),
+    );
   }
 
   if (me.data && path.data) {

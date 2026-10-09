@@ -39,7 +39,7 @@ export function useDemoTools(me: MeOut) {
   const resetDemo = useResetDemo();
   const { toast } = useToast();
   const [running, setRunning] = useState<DemoTask | null>(null);
-  const [weekFinished, setWeekFinished] = useState(false);
+  const [finishedWeeks, setFinishedWeeks] = useState<readonly number[]>([]);
   const meRefreshing = useIsFetching({ queryKey: qk.me, exact: true }) > 0;
 
   /** One or two jumps to the next midnight, decided by today's lesson before the first, reported as one. */
@@ -78,7 +78,8 @@ export function useDemoTools(me: MeOut) {
     const change = await jump(action);
     toast({ tone: "info", message: clockToast(action, change, before) });
     // A finished league week is announced by its result modal rather than a toast line.
-    if (change.effects.leagueResults.length > 0) setWeekFinished(true);
+    const finished = change.effects.leagueResults.map((result) => result.membershipId);
+    if (finished.length > 0) setFinishedWeeks((ids) => [...ids, ...finished]);
   }
 
   async function track(task: DemoTask, work: () => Promise<void>): Promise<void> {
@@ -102,8 +103,8 @@ export function useDemoTools(me: MeOut) {
   return {
     running,
     busy: running !== null || meRefreshing,
-    /** A jump finalized a league week, and the refreshed `me` holds its result in `pendingLeagueResult`. */
-    weekFinished: weekFinished && !meRefreshing,
+    /** The memberships whose league week a jump finalized during this visit; their results get the modal. */
+    finishedWeeks,
     run: (action: DemoAction) => track(action, () => perform(action)),
     reset: () =>
       track("reset", async () => {

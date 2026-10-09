@@ -1,4 +1,4 @@
-import type { ClockChangeOut, DevLearnerPatchIn, ISODate, SyncEffectsOut } from "@/lib/api/types";
+import type { ClockChangeOut, DevLearnerPatchIn, ISODate, LeagueResultOut, SyncEffectsOut } from "@/lib/api/types";
 import { pluralize } from "@/lib/format";
 
 /*
@@ -92,6 +92,15 @@ export function clockToast(action: ClockAction, { clock, effects }: ClockChangeO
   const streak = streakLine(effects.streak, todayDone);
   if (streak) lines.push(streak);
   return lines.join(" ");
+}
+
+/**
+ * The league result to announce on the settings page: the learner's unseen result, but only when it belongs to
+ * a week that one of this visit's jumps finished (`finishedIds`). Any older unseen result greets the learner
+ * on the path instead.
+ */
+export function weekResultToShow(pending: LeagueResultOut | null, finishedIds: readonly number[]): LeagueResultOut | null {
+  return pending !== null && finishedIds.includes(pending.membershipId) ? pending : null;
 }
 
 /** "Real time + 1 day 5 h"; minutes only count while the jump is under an hour. */

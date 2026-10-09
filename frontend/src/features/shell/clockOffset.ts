@@ -1,3 +1,5 @@
+import { matchesRoute } from "./routes";
+
 const MINUTE = 60;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
@@ -17,4 +19,13 @@ export function formatClockOffset(seconds: number): string {
     days > 0 ? [[days, "d"], [hours, "h"]] : hours > 0 ? [[hours, "h"], [minutes, "m"]] : [[minutes, "m"]];
   const shown = smaller && smaller[0] > 0 ? [largest, smaller] : [largest];
   return `+${shown.map(([value, unit]) => `${value}${unit}`).join(" ")}`;
+}
+
+/**
+ * The DEV badge shows while the demo clock runs ahead (an offset of 0 means real time, or dev tools off), except
+ * on /settings: its Demo tools card shows the simulated time already, and on phones the badge would sit on the
+ * pinned SAVE CHANGES bar.
+ */
+export function showsDevTimeBadge(pathname: string, offsetSeconds: number): boolean {
+  return offsetSeconds > 0 && !matchesRoute(pathname, "/settings");
 }

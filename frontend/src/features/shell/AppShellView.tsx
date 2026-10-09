@@ -4,8 +4,11 @@ import { useState, type ReactNode } from "react";
 import { StatsBar } from "@/features/stats/StatsBar";
 import { StatsBarSkeleton } from "@/features/stats/StatsBarSkeleton";
 import type { MeOut, QuestsOut } from "@/lib/api/types";
+import { cn } from "@/lib/cn";
 import { BottomNav } from "./BottomNav";
+import { showsDevTimeBadge } from "./clockOffset";
 import { ComingSoonProvider } from "./ComingSoon";
+import { ContentFadeIn } from "./ContentFadeIn";
 import { DevTimeBadge } from "./DevTimeBadge";
 import { IconRail } from "./IconRail";
 import { MobileTopBar } from "./MobileTopBar";
@@ -13,6 +16,12 @@ import { OfflineBanner } from "./OfflineBanner";
 import { RightRail } from "./RightRail";
 import { RightRailSlotContext } from "./RightRailSlot";
 import { Sidebar } from "./Sidebar";
+
+/**
+ * Below 1160 px the DEV badge floats over the bottom of the page column, so the column ends with room for it
+ * and its last row never stays hidden under the badge. From 1160 px the badge sits in the sidebar.
+ */
+const DEV_BADGE_ROOM = "pb-14 2xl:pb-6";
 
 interface AppShellViewProps {
   pathname: string;
@@ -33,6 +42,8 @@ export function AppShellView({ pathname, me, quests, children }: AppShellViewPro
   // The settings page portals its section menu into this element, which lives in the right rail.
   const [railSlot, setRailSlot] = useState<HTMLDivElement | null>(null);
   const user = me?.user;
+  const devOffset = me?.dev?.clockOffsetSeconds ?? 0;
+  const devBadge = showsDevTimeBadge(pathname, devOffset);
   return (
     <ComingSoonProvider>
       <RightRailSlotContext value={railSlot}>
@@ -52,18 +63,18 @@ export function AppShellView({ pathname, me, quests, children }: AppShellViewPro
           {/* The bottom padding sits on the page column, not here: a sticky rail stops at its container's
               padding, so padding here would push the rail up at the end of a short page. */}
           <div className="mx-auto flex max-w-[1064px] justify-center gap-12 lg:px-6">
-            <main id="main" className="max-w-(--col-max) min-w-0 flex-1 lg:pb-6">
+            <main id="main" className={cn("max-w-(--col-max) min-w-0 flex-1", devBadge ? DEV_BADGE_ROOM : "lg:pb-6")}>
               <div className="sticky top-0 z-(--z-sticky) hidden h-16 items-center bg-page lg:flex xl:hidden">
                 {me ? <StatsBar me={me} placement="header" className="w-full" /> : <StatsBarSkeleton className="w-full" />}
               </div>
-              {children}
+              <ContentFadeIn>{children}</ContentFadeIn>
             </main>
             <RightRail pathname={pathname} me={me} quests={quests} slotRef={setRailSlot} className="hidden xl:flex" />
           </div>
         </div>
 
         <BottomNav pathname={pathname} user={user} className="lg:hidden" />
-        {me && <DevTimeBadge dev={me.dev} />}
+        {devBadge && <DevTimeBadge offsetSeconds={devOffset} />}
         <OfflineBanner />
       </RightRailSlotContext>
     </ComingSoonProvider>
