@@ -15,14 +15,15 @@ from app.core.errors import LeagueResultNotReady, NotFound
 from app.domain import leagues
 from app.domain.bots import bot_week_xp
 from app.domain.calendar import league_week_bounds, league_week_start
+from app.domain.catalog import LeagueRow
 from app.domain.leagues import Ranked, Standing
 from app.domain.rules import LEAGUE_COHORT_SIZE
-from app.models import BotProfile, League, LeagueCohort, LeagueMembership, User
+from app.models import BotProfile, LeagueCohort, LeagueMembership, User
 from app.repositories import league_repo, play_repo, user_repo
 from app.schemas.common import LeagueBrief
 from app.schemas.league import LeagueAckOut, LeagueOut, LeagueResultOut, LeagueRowOut, LeagueTierOut
 from app.schemas.me import MeLeague
-from app.services import achievement_service
+from app.services import achievement_service, reference
 from app.services.context import RequestContext
 
 
@@ -41,6 +42,26 @@ class CohortStanding:
     cohort: LeagueCohort
     ranked: list[Ranked]
     mine: Ranked
+
+
+@dataclass(frozen=True)
+class LeagueWeek:
+    """The learner's league this week, as of now: what the shell's league card, the leaderboard page
+    and a completion receipt are built from."""
+
+    completed_sessions: int  # of any kind: ten open the leagues
+    standing: CohortStanding | None  # None until the learner joins this week's cohort
+    league: LeagueRow  # the cohort's tier once joined, else the learner's own tier
+    week_start: date
+    week_end: datetime
+
+    @property
+    def unlocked(self) -> bool:
+        return leagues.leagues_unlocked(self.completed_sessions)
+
+    @property
+    def cohort_size(self) -> int:
+        return len(self.standing.ranked) if self.standing else LEAGUE_COHORT_SIZE
 
 
 # ---- joining and ranking ----
@@ -75,6 +96,20 @@ def standings(db: Session, cohort: LeagueCohort, until: datetime) -> list[Ranked
     ]
     rows += [_bot_standing(bot, cohort, until) for bot in league_repo.bot_members(db, cohort.id)]
     return leagues.rank(rows)
+
+
+def this_week(db: Session, ctx: RequestContext) -> LeagueWeek:
+    """The learner's league week as of now: unlock progress, the tier shown and the standing."""
+    standing = current_standing(db, ctx.user.id, ctx.now)
+    tier = standing.cohort.league_tier if standing else ctx.stats.league_tier
+    week = league_week_start(ctx.now)
+    return LeagueWeek(
+        completed_sessions=play_repo.count_completed_sessions(db, ctx.user.id),
+        standing=standing,
+        league=reference.catalog(db).league(tier),
+        week_start=week,
+        week_end=league_week_bounds(week)[1],
+    )
 
 
 def current_standing(db: Session, user_id: int, now: datetime) -> CohortStanding | None:
@@ -125,59 +160,63 @@ def _finalize(db: Session, cohort: LeagueCohort, now: datetime) -> list[LeagueMe
 # ---- views ----
 
 
-def me_league(db: Session, ctx: RequestContext) -> MeLeague:
-    """The shell's league card: unlock progress, the tier, and this week's rank and zone once joined."""
-    completed = play_repo.count_completed_sessions(db, ctx.user.id)
-    standing = current_standing(db, ctx.user.id, ctx.now)
-    league = _league(db, standing.cohort.league_tier if standing else ctx.stats.league_tier)
-    _, week_end = league_week_bounds(league_week_start(ctx.now))
-    size = len(standing.ranked) if standing else LEAGUE_COHORT_SIZE
+def me_league(db: Session, ctx: RequestContext, week: LeagueWeek | None = None) -> MeLeague:
+    """The shell's league card: unlock progress, the tier, and this week's rank and zone once joined.
+
+    A caller that has just read the league week (a completion) passes it instead of a second read.
+    """
+    week = week or this_week(db, ctx)
+    standing, league = week.standing, week.league
     return MeLeague(
         tier=league.tier,
         name=league.name,
         color=league.color,
-        unlocked=leagues.leagues_unlocked(completed),
-        lessons_to_unlock=leagues.sessions_to_unlock(completed),
+        unlocked=week.unlocked,
+        lessons_to_unlock=leagues.sessions_to_unlock(week.completed_sessions),
         joined_this_week=standing is not None,
         rank=standing.mine.rank if standing else None,
         weekly_xp=standing.mine.xp if standing else 0,
-        zone=leagues.zone(standing.mine.rank, size, tier=league.tier) if standing else None,
+        zone=leagues.zone(standing.mine.rank, week.cohort_size, tier=league.tier) if standing else None,
         xp_to_pass_next=leagues.xp_to_pass_next(standing.ranked, ctx.user.id) if standing else None,
-        cohort_size=size,
+        cohort_size=week.cohort_size,
         promote_count=league.promote_count,
         demote_count=league.demote_count,
-        week_ends_at=week_end,
+        week_ends_at=week.week_end,
     )
 
 
 def league_view(db: Session, ctx: RequestContext) -> LeagueOut:
     """The leaderboard page: the tier ladder, this week's standings once joined and last week's result."""
-    completed = play_repo.count_completed_sessions(db, ctx.user.id)
-    standing = current_standing(db, ctx.user.id, ctx.now)
-    league = _league(db, standing.cohort.league_tier if standing else ctx.stats.league_tier)
-    week = league_week_start(ctx.now)
+    week = this_week(db, ctx)
+    standing, league = week.standing, week.league
     last = league_repo.latest_result(db, ctx.user.id)
     return LeagueOut(
-        unlocked=leagues.leagues_unlocked(completed),
-        lessons_to_unlock=leagues.sessions_to_unlock(completed),
+        unlocked=week.unlocked,
+        lessons_to_unlock=leagues.sessions_to_unlock(week.completed_sessions),
         joined=standing is not None,
-        league=_brief(league),
+        league=badge(league),
         tiers=_tiers(db, ctx.user.id, league.tier),
-        week_start=week,
-        week_ends_at=league_week_bounds(week)[1],
+        week_start=week.week_start,
+        week_ends_at=week.week_end,
         server_now=ctx.now,
         promote_count=league.promote_count,
         demote_count=league.demote_count,
-        cohort_size=len(standing.ranked) if standing else LEAGUE_COHORT_SIZE,
+        cohort_size=week.cohort_size,
         rows=_rows(db, standing, ctx.user.id) if standing else [],
         last_week_result=result_out(db, last) if last else None,
     )
 
 
 def pending_result(db: Session, user_id: int) -> LeagueResultOut | None:
-    """The newest finished week whose result modal the learner has not acknowledged yet."""
-    membership = league_repo.latest_result(db, user_id, unseen_only=True)
-    return result_out(db, membership) if membership else None
+    """The result modal still to show: the newest finished week, until the learner acknowledges it.
+
+    Only the newest week counts. An older week nobody acknowledged (several weeks ended before the
+    learner looked) is stale news, so it does not come back once the newest one has been seen.
+    """
+    membership = league_repo.latest_result(db, user_id)
+    if membership is None or membership.result_seen_at is not None:
+        return None
+    return result_out(db, membership)
 
 
 def result_out(db: Session, membership: LeagueMembership) -> LeagueResultOut:
@@ -188,11 +227,11 @@ def result_out(db: Session, membership: LeagueMembership) -> LeagueResultOut:
     return LeagueResultOut(
         membership_id=membership.id,
         week_start=membership.cohort.week_start,
-        league=_brief(_league(db, tier)),
+        league=brief(db, tier),
         final_rank=membership.final_rank,
         final_xp=membership.final_xp,
         outcome=membership.outcome,
-        new_league=_brief(_league(db, leagues.tier_after(tier, membership.outcome))),
+        new_league=brief(db, leagues.tier_after(tier, membership.outcome)),
         seen=membership.result_seen_at is not None,
     )
 
@@ -211,7 +250,12 @@ def ack_result(db: Session, ctx: RequestContext, membership_id: int) -> LeagueAc
 
 def brief(db: Session, tier: int) -> LeagueBrief:
     """A tier's badge: number, name and colour."""
-    return _brief(_league(db, tier))
+    return badge(reference.catalog(db).league(tier))
+
+
+def badge(league: LeagueRow) -> LeagueBrief:
+    """A league tier as its badge shows it."""
+    return LeagueBrief(tier=league.tier, name=league.name, color=league.color)
 
 
 # ---- helpers ----
@@ -247,7 +291,7 @@ def _tiers(db: Session, user_id: int, current_tier: int) -> list[LeagueTierOut]:
     highest = max(current_tier, league_repo.highest_cohort_tier(db, user_id) or 0)
     return [
         LeagueTierOut(tier=row.tier, name=row.name, color=row.color, reached=row.tier <= highest)
-        for row in league_repo.leagues(db)
+        for row in reference.catalog(db).leagues.values()
     ]
 
 
@@ -275,14 +319,3 @@ def _streak_of(user: User) -> int:
     if user.bot_profile is not None:
         return user.bot_profile.baseline_streak
     return user.stats.streak_current if user.stats is not None else 0
-
-
-def _league(db: Session, tier: int) -> League:
-    league = league_repo.get_league(db, tier)
-    if league is None:  # the ten tiers are seeded reference data
-        raise RuntimeError(f"league tier {tier} is missing")
-    return league
-
-
-def _brief(league: League) -> LeagueBrief:
-    return LeagueBrief(tier=league.tier, name=league.name, color=league.color)

@@ -1,8 +1,8 @@
 """The completion receipt: the learner's state captured before and after the rewards, compared.
 
-`capture` reads a snapshot; `build` compares two snapshots with what the rewards paid and writes
-the receipt behind the celebration screens. The receipt never contains `me`, because it is cached
-for replays while `me` must always be fresh.
+`capture_before` and `capture_after` read the two states; `build` compares them with what the
+rewards paid and writes the receipt behind the celebration screens. The receipt never contains `me`,
+because it is cached for replays while `me` must always be fresh.
 """
 
 from dataclasses import dataclass
@@ -18,7 +18,6 @@ from app.domain.session_flow import ItemFacts
 from app.domain.streak import StreakState, is_milestone
 from app.models import LessonSession
 from app.repositories import ledger_repo, play_repo
-from app.schemas.common import LeagueBrief
 from app.schemas.completion import (
     CompletionDailyGoal,
     CompletionLeague,
@@ -33,6 +32,7 @@ from app.schemas.completion import (
 )
 from app.services import league_service, path_service, streak_service
 from app.services.context import RequestContext
+from app.services.league_service import LeagueWeek
 from app.services.path_service import PathSnapshot
 from app.services.rewards import RewardEffects
 from app.services.session_views import item_facts
@@ -41,52 +41,55 @@ RECENT_DAYS = 7  # recentSessionCount covers today and the six local days before
 
 
 @dataclass(frozen=True)
-class LeaguePlace:
-    """Where the learner stands in this week's cohort."""
-
-    league: LeagueBrief
-    weekly_xp: int
-    rank: int
-
-
-@dataclass(frozen=True)
-class Snapshot:
-    """The parts of the learner's state a completion can change."""
+class Before:
+    """What the receipt compares against: the learner's state just before the session counted."""
 
     path: PathSnapshot | None  # only for sessions played on a path node
     streak: StreakState
     xp_today: int
-    league: LeaguePlace | None  # None until the learner joins this week's cohort
-    week: list[StreakDayOut]
-    recent_sessions: int
+    league_rank: int | None  # None until the learner joins this week's cohort
 
 
-def capture(db: Session, ctx: RequestContext, session: LessonSession) -> Snapshot:
-    """Read the learner's state around a completion."""
-    recent_since = local_midnight_utc(ctx.today - timedelta(days=RECENT_DAYS - 1), ctx.user.timezone)
-    return Snapshot(
+@dataclass(frozen=True)
+class After:
+    """The learner's state once the rewards are paid."""
+
+    path: PathSnapshot
+    streak: StreakState
+    xp_today: int
+    league: LeagueWeek
+    streak_week: list[StreakDayOut]  # the last seven local days
+    recent_sessions: int  # completed sessions over the last seven local days
+
+
+def capture_before(db: Session, ctx: RequestContext, session: LessonSession) -> Before:
+    """Read the learner's state before the session is marked completed."""
+    standing = league_service.current_standing(db, ctx.user.id, ctx.now)
+    return Before(
         path=path_service.snapshot(db, ctx.user) if session.node_id is not None else None,
         streak=streak_service.state_of(ctx.stats),
         xp_today=ledger_repo.xp_on(db, ctx.user.id, ctx.today),
-        league=_league_place(db, ctx),
-        week=streak_service.week(db, ctx.user.id, ctx.today),
+        league_rank=None if standing is None else standing.mine.rank,
+    )
+
+
+def capture_after(db: Session, ctx: RequestContext, path_after: PathSnapshot) -> After:
+    """Read the learner's state after the rewards; `path_after` is their path once completed."""
+    recent_since = local_midnight_utc(ctx.today - timedelta(days=RECENT_DAYS - 1), ctx.user.timezone)
+    return After(
+        path=path_after,
+        streak=streak_service.state_of(ctx.stats),
+        xp_today=ledger_repo.xp_on(db, ctx.user.id, ctx.today),
+        league=league_service.this_week(db, ctx),
+        streak_week=streak_service.week(db, ctx.user.id, ctx.today),
         recent_sessions=play_repo.count_completed_sessions(db, ctx.user.id, ended_since=recent_since),
     )
 
 
-def _league_place(db: Session, ctx: RequestContext) -> LeaguePlace | None:
-    """Where the learner stands in this week's cohort, or None before they join it."""
-    standing = league_service.current_standing(db, ctx.user.id, ctx.now)
-    if standing is None:
-        return None
-    league = league_service.brief(db, standing.cohort.league_tier)
-    return LeaguePlace(league, standing.mine.xp, standing.mine.rank)
-
-
 def build(
     session: LessonSession,
-    before: Snapshot,
-    after: Snapshot,
+    before: Before,
+    after: After,
     effects: RewardEffects,
     *,
     goal_xp: int,
@@ -110,7 +113,7 @@ def build(
             extended_today=effects.streak_extended,
             is_new_record=after.streak.current > before.streak.longest,
             milestone=effects.streak_extended and is_milestone(after.streak.current),
-            week=after.week,
+            week=after.streak_week,
         ),
         daily_goal=CompletionDailyGoal(
             goal_xp=goal_xp,
@@ -123,7 +126,7 @@ def build(
         quests_completed=effects.quests_completed,
         achievements_unlocked=effects.achievements_unlocked,
         league=_league(
-            before.league,
+            before.league_rank,
             after.league,
             joined_now=effects.league_join is not None and effects.league_join.joined_now,
         ),
@@ -169,18 +172,16 @@ def _node(
     )
 
 
-def _league(
-    before: LeaguePlace | None, after: LeaguePlace | None, *, joined_now: bool
-) -> CompletionLeague | None:
+def _league(rank_before: int | None, after: LeagueWeek, *, joined_now: bool) -> CompletionLeague | None:
     """The learner's rank before and after; None while they have no cohort this week."""
-    if after is None:
+    if after.standing is None:
         return None
     return CompletionLeague(
         joined_now=joined_now,
-        league=after.league,
-        weekly_xp=after.weekly_xp,
-        rank_before=None if before is None else before.rank,
-        rank_after=after.rank,
+        league=league_service.badge(after.league),
+        weekly_xp=after.standing.mine.xp,
+        rank_before=rank_before,
+        rank_after=after.standing.mine.rank,
     )
 
 

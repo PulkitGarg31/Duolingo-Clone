@@ -1,12 +1,13 @@
 """Profiles (learners and league bots alike) and the learner's day-by-day activity history."""
 
-from datetime import date, datetime, timedelta
+from collections.abc import Mapping
+from datetime import date, timedelta
 from typing import Final, Literal
 
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFound, ValidationFailed
-from app.domain import leagues, path
+from app.domain import path
 from app.domain.enums import AchievementMetric, ActivityKind, DayState
 from app.models import BotProfile, User
 from app.repositories import league_repo, ledger_repo, play_repo, user_repo
@@ -14,6 +15,9 @@ from app.schemas.me import ActivityDayOut, ActivityOut
 from app.schemas.profile import ProfileOut, ProfileStats, ProfileUser
 from app.services import achievement_service, league_service, path_service
 from app.services.context import RequestContext
+from app.services.path_service import PathSnapshot
+
+Metrics = Mapping[AchievementMetric, int]
 
 TOP_FINISH: Final = 3  # "top three finishes" on the profile
 DEFAULT_ACTIVITY_DAYS: Final = 35  # five weeks: the streak calendar's default range
@@ -24,13 +28,20 @@ def profile(db: Session, ctx: RequestContext, user_ref: int | Literal["me"]) -> 
     """A learner's or a bot's profile: stats and every achievement in catalogue order.
 
     Bots have no lesson history, so their words, lessons and crowns are null; their totals come
-    from the same numbers as the leaderboard, so the two always agree.
+    from the same numbers as the leaderboard, so the two always agree. The statistics are measured
+    once and shared by the stats and the achievements.
     """
     user = ctx.user if user_ref == "me" else user_repo.get(db, user_ref)
     if user is None:
         raise NotFound("There is no user with that id.")
     bot = user.bot_profile
-    stats = _learner_stats(db, user, ctx.now) if bot is None else _bot_stats(db, bot, ctx.now)
+    if bot is None:
+        path_now = path_service.snapshot(db, user)
+        metrics = achievement_service.metrics_for(db, user, ctx.now, path_now)
+        stats = _learner_stats(db, user, metrics, path_now)
+    else:
+        metrics = achievement_service.metrics_for(db, user, ctx.now)
+        stats = _bot_stats(db, bot, metrics)
     return ProfileOut(
         user=ProfileUser(
             id=user.id,
@@ -42,7 +53,7 @@ def profile(db: Session, ctx: RequestContext, user_ref: int | Literal["me"]) -> 
             is_bot=bot is not None,
         ),
         stats=stats,
-        achievements=achievement_service.list_for_profile(db, user.id, ctx.now, is_bot=bot is not None),
+        achievements=achievement_service.list_for_profile(db, user.id, metrics, is_bot=bot is not None),
     )
 
 
@@ -53,7 +64,10 @@ def activity(db: Session, ctx: RequestContext, first: date | None, last: date | 
     cover at most 92 days.
     """
     last = ctx.today if last is None else last
-    first = last - timedelta(days=DEFAULT_ACTIVITY_DAYS - 1) if first is None else first
+    if first is None:
+        if last.toordinal() < DEFAULT_ACTIVITY_DAYS:  # five weeks back would fall before year 1
+            raise ValidationFailed("The range can't start before the first day of the calendar.")
+        first = last - timedelta(days=DEFAULT_ACTIVITY_DAYS - 1)
     if not first <= last <= ctx.today:
         raise ValidationFailed("The range must run from 'from' to 'to', ending no later than today.")
     if (last - first).days + 1 > MAX_ACTIVITY_DAYS:
@@ -78,15 +92,13 @@ def activity(db: Session, ctx: RequestContext, first: date | None, last: date | 
     return ActivityOut(from_=first, to=last, today=ctx.today, items=items)
 
 
-def _learner_stats(db: Session, user: User, now: datetime) -> ProfileStats:
+def _learner_stats(db: Session, user: User, metrics: Metrics, path_now: PathSnapshot) -> ProfileStats:
     """A learner's stats, all derived from their facts. The ones achievements also use (longest
-    streak, total XP, words learned) are measured exactly as for the achievements."""
+    streak, total XP, words learned) are the achievements' own measurements."""
     stats = user.stats
     if stats is None:  # every learner has a stats row; bots are handled separately
         raise RuntimeError(f"learner {user.id} has no stats row")
-    metrics = achievement_service.metrics_for(db, user.id, now)
-    path_now = path_service.snapshot(db, user)
-    leagues_open = leagues.leagues_unlocked(play_repo.count_completed_sessions(db, user.id))
+    leagues_open = metrics[AchievementMetric.HIGHEST_LEAGUE] > 0  # it stays 0 until leagues unlock
     return ProfileStats(
         current_streak=stats.streak_current,
         longest_streak=metrics[AchievementMetric.LONGEST_STREAK],
@@ -103,15 +115,14 @@ def _learner_stats(db: Session, user: User, now: datetime) -> ProfileStats:
     )
 
 
-def _bot_stats(db: Session, bot: BotProfile, now: datetime) -> ProfileStats:
+def _bot_stats(db: Session, bot: BotProfile, metrics: Metrics) -> ProfileStats:
     """A bot's stats: its fixed streak, its newest league, and its baseline plus league XP, which is
-    measured exactly as for its achievements (and from the same numbers as the leaderboard)."""
+    its achievements' own measurement (and comes from the same numbers as the leaderboard)."""
     tier = league_repo.latest_cohort_tier(db, bot.user_id)
-    total_xp = achievement_service.metrics_for(db, bot.user_id, now)[AchievementMetric.TOTAL_XP]
     return ProfileStats(
         current_streak=bot.baseline_streak,
         longest_streak=bot.baseline_streak,
-        total_xp=total_xp,
+        total_xp=metrics[AchievementMetric.TOTAL_XP],
         league=None if tier is None else league_service.brief(db, tier),
         top_three_finishes=league_repo.count_finishes(db, bot.user_id, best_rank=TOP_FINISH),
         words_learned=None,

@@ -106,6 +106,19 @@ def test_repeating_an_answer_replays_the_verdict_without_a_second_heart(
     assert len(client.get(f"{API}/sessions/{drinks['id']}").json()["items"]) == 7  # still one retry
 
 
+def test_a_late_replay_repeats_the_verdict_with_the_session_as_it_is_now(
+    client: TestClient, seeded_engine: Engine, drinks: Json
+) -> None:
+    wrong = answer_for(exercise_of(seeded_engine, drinks["items"][0]), correct=False)
+    first = answer(client, drinks, 1, wrong)
+    answer(client, drinks, 2, answer_for(exercise_of(seeded_engine, drinks["items"][1])))
+    late = answer(client, drinks, 1, wrong)  # a duplicate of the first request, arriving last
+    verdict = ("result", "isCorrect", "note", "correctAnswer", "meaning", "heartLost", "appendedItem")
+    assert {key: late[key] for key in verdict} == {key: first[key] for key in verdict}
+    assert (late["replayed"], late["progress"], late["combo"]) == (True, {"completed": 1, "total": 6}, 1)
+    assert late["session"]["currentItemId"] == drinks["items"][2]["id"]
+
+
 def test_a_different_answer_to_an_answered_item_is_refused(
     client: TestClient, seeded_engine: Engine, drinks: Json
 ) -> None:

@@ -6,7 +6,6 @@ refused), and completion pays its rewards exactly once behind a compare-and-set.
 service, these functions never commit: the router does, once the use case has returned.
 """
 
-import json
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -14,7 +13,8 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.core import errors
-from app.domain import grading, hints, session_flow
+from app.domain import grading, session_flow
+from app.domain.content import CourseContent, ExerciseRow, NodeRow
 from app.domain.enums import (
     EndReason,
     GemReason,
@@ -44,8 +44,8 @@ from app.domain.rules import (
     TIMED_BONUS_SECONDS,
     TIMED_START_SECONDS,
 )
-from app.models import Exercise, LessonSession, PathNode, SessionItem, User
-from app.repositories import content_repo, play_repo
+from app.models import LessonSession, SessionItem
+from app.repositories import play_repo
 from app.schemas.completion import CompletionReceipt
 from app.schemas.sessions import AnswerIn, AnswerResultOut, QuitOut, SessionOut, StartSessionIn
 from app.services import (
@@ -54,11 +54,13 @@ from app.services import (
     hearts_service,
     path_service,
     receipts,
+    reference,
     rewards,
     session_views,
 )
 from app.services.context import RequestContext
 from app.services.exercises import PromptStyle
+from app.services.league_service import LeagueWeek
 from app.services.path_service import PathSnapshot
 from app.services.session_views import Scene
 
@@ -71,10 +73,6 @@ _PLAIN_REFUSALS: dict[StartRefusal, type[errors.AppError]] = {
     StartRefusal.NOTHING_TO_PRACTICE: errors.NothingToPractice,
 }
 
-# Course content never changes while the server runs (the demo reset only rewrites learner data), so
-# a course's vocabulary is built once. The key includes the database, as tests open many of them.
-_VOCABULARY: dict[tuple[str, int], dict[TextLang, frozenset[str]]] = {}
-
 
 @dataclass(frozen=True)
 class _Plan:
@@ -82,8 +80,19 @@ class _Plan:
 
     rng_seed: int
     items: list[PlannedItem]
-    pool: list[Exercise]  # the exercises planned from, with their children loaded
     lesson_id: int | None = None  # lesson sessions only
+
+
+@dataclass(frozen=True)
+class Completion:
+    """A completed session's receipt, and the learner's league week right after its rewards.
+
+    The router hands the week to `me`, which then has no cohort to rank again. A replayed receipt
+    comes without one.
+    """
+
+    receipt: CompletionReceipt
+    league_week: LeagueWeek | None = None
 
 
 # ---- start and read ----
@@ -94,10 +103,12 @@ def start(db: Session, ctx: RequestContext, request: StartSessionIn) -> tuple[Se
 
     The preconditions are checked before anything changes, so a refused start leaves an active
     session untouched. Any other active session then ends as superseded. A legendary run pays its
-    entry fee here, once: resuming it is free.
+    entry fee here, once: resuming it is free. Resuming counts as activity, so the idle timeout
+    starts over.
     """
     active = play_repo.active_session(db, ctx.user.id)
     if active is not None and (active.kind, active.node_id) == (request.kind, request.node_id):
+        active.last_activity_at = ctx.now
         return view(db, ctx, _owned(db, ctx, active.id), resumed=True), False
     plan = _plan(db, ctx, request)
     if active is not None:
@@ -118,7 +129,7 @@ def get(db: Session, ctx: RequestContext, session_id: int) -> SessionOut:
 
 def view(db: Session, ctx: RequestContext, session: LessonSession, *, resumed: bool = False) -> SessionOut:
     """The session as the lesson player renders it."""
-    return session_views.session_out(session, _scene(db, ctx, session), resumed=resumed)
+    return session_views.session_out(session, _scene(db, ctx, _content(db, ctx), session), resumed=resumed)
 
 
 # ---- answering ----
@@ -136,23 +147,25 @@ def answer(
     5. the answer fits the exercise (422).
     Then the grade is recorded and the session's rules apply: a lesson spends a heart and re-queues
     the exercise, practice re-queues it once, a legendary run fails on its third mistake, and a
-    right answer in timed practice adds time to the clock.
+    right answer in timed practice adds time to a clock that is still running.
     """
     session = _owned(db, ctx, session_id)
     item = next((queued for queued in session.items if queued.id == item_id), None)
     if item is None:
         raise errors.NotFound("There is no item with that id in this session.")
-    submitted = canonical_json(body)
+    content = _content(db, ctx)
+    exercise = content.exercise(item.exercise_id)
+    submitted = exercises.canonical_json(body)
     if item.result is not None:
         if item.submitted_json != submitted:
             raise errors.ItemAlreadyAnswered()
-        return _replay(db, ctx, session, item, body)
+        return _replay(db, ctx, content, session, item, body)
     _check_answerable(ctx, session, item)
-    grade = _grade(db, ctx.user, item.exercise, body)
+    grade = _grade(content, exercise, body)
     queue_before = session_views.item_facts(session)
     _record(item, grade.result, grade.note, submitted, ctx.now)
     if grade.result == ItemResult.CANT_LISTEN:
-        _excuse_listening(session, submitted, ctx.now)
+        _excuse_listening(session, content, submitted, ctx.now)
     answered = session_flow.ItemFacts(item.seq, item.exercise_id, item.origin)
     outcome = session_flow.decide(session.kind, answered, grade.result, queue_before)
     if outcome.lose_heart:
@@ -160,51 +173,58 @@ def answer(
     retry = _queue_retry(session, item) if outcome.append_retry else None
     if outcome.fail:
         _end(session, SessionStatus.FAILED, EndReason.TOO_MANY_MISTAKES, ctx.now)
-    if session.expires_at is not None and grade.result == ItemResult.CORRECT:  # only timed has a deadline
-        session.expires_at += timedelta(seconds=TIMED_BONUS_SECONDS.get(item.exercise.type, 0))
+    # Only timed practice has a deadline. Every right answer moves it later by the exercise's bonus,
+    # including one that arrives within the network grace period just after the clock reached zero.
+    if session.expires_at is not None and grade.result == ItemResult.CORRECT:
+        session.expires_at += timedelta(seconds=TIMED_BONUS_SECONDS.get(exercise.type, 0))
     session.last_activity_at = ctx.now
     db.flush()  # gives a queued retry its id
     return _answer_out(
-        db, ctx, session, item, grade, heart_lost=outcome.lose_heart, retry=retry, replayed=False
+        _scene(db, ctx, content, session),
+        session,
+        item,
+        grade,
+        heart_lost=outcome.lose_heart,
+        retry=retry,
+        replayed=False,
     )
-
-
-def canonical_json(body: AnswerIn) -> str:
-    """The answer payload in one canonical text form: a repeated request is compared against it."""
-    return json.dumps(body.model_dump(by_alias=True), sort_keys=True, separators=(",", ":"))
 
 
 # ---- ending ----
 
 
-def complete(db: Session, ctx: RequestContext, session_id: int) -> CompletionReceipt:
+def complete(db: Session, ctx: RequestContext, session_id: int) -> Completion:
     """Complete a session and pay its rewards, exactly once.
 
     One compare-and-set statement marks the session completed (status, reason, end time and the
     mistake and combo snapshots together); only the request that wins it pays the rewards and caches
     the receipt. Completing a completed session replays that receipt and writes nothing.
+
+    The learner's path is read once, right after the session counts as completed: the rewards change
+    no node's state, so the achievements and the receipt share that one snapshot.
     """
     session = _owned(db, ctx, session_id)
     if session.status == SessionStatus.COMPLETED:
-        return _cached_receipt(session)
+        return Completion(_cached_receipt(session))
     if session.status != SessionStatus.ACTIVE:
         raise errors.SessionNotActive(session.status, session.end_reason)
     if session_views.blocked_reason(session, ctx.stats.hearts) is not None:
         raise hearts_service.out_of_hearts(ctx.stats, ctx.settings)
     if not session_views.can_complete(session, ctx.stats.hearts, ctx.now):
         raise errors.SessionIncomplete()
-    before = receipts.capture(db, ctx, session)
+    before = receipts.capture_before(db, ctx, session)
     queue = session_views.item_facts(session)
     mistakes, best_combo = session_flow.mistakes(queue), session_flow.best_combo(queue)
     if not play_repo.mark_completed(db, session.id, ctx.now, mistakes=mistakes, best_combo=best_combo):
-        return _lost_race(db, session.id)
-    effects = rewards.apply_completion_rewards(db, ctx, session)
-    after = receipts.capture(db, ctx, session)
+        return Completion(_lost_race(db, session.id))
+    path_after = path_service.snapshot(db, ctx.user)
+    effects = rewards.apply_completion_rewards(db, ctx, session, path_after)
+    after = receipts.capture_after(db, ctx, path_after)
     receipt = receipts.build(
         session, before, after, effects, goal_xp=ctx.preferences.daily_goal_xp, now=ctx.now
     )
     play_repo.store_receipt(db, session.id, receipt.model_dump_json())
-    return receipt
+    return Completion(receipt, after.league)
 
 
 def quit_session(db: Session, ctx: RequestContext, session_id: int) -> QuitOut:
@@ -267,32 +287,35 @@ def _plan(db: Session, ctx: RequestContext, request: StartSessionIn) -> _Plan:
         raise _refusal_error(refusal, ctx)
     seed = stable_seed(ctx.user.id, request.kind, request.node_id, ctx.now.isoformat())
     listening = ctx.preferences.listening_exercises
+    content = path_now.content
     match request.kind:
         case SessionKind.LESSON:
-            return _lesson_plan(db, path_now, _required(node), seed, listening)
+            return _lesson_plan(path_now, _required(node), seed, listening)
         case SessionKind.PRACTICE:
-            return _practice_plan(db, ctx, node, completed, seed, listening)
+            return _practice_plan(db, ctx, content, node, completed, seed, listening)
         case SessionKind.LEGENDARY:
-            pool = content_repo.node_exercises(db, _required(node).id)
-            return _Plan(seed, plan_legendary(_facts(pool), rng_for(seed), listening_enabled=listening), pool)
+            pool = content.node_exercises(_required(node))
+            return _Plan(seed, plan_legendary(_facts(pool), rng_for(seed), listening_enabled=listening))
         case SessionKind.TIMED:
-            pool = content_repo.exercises_in_lessons(db, completed)
-            return _Plan(seed, plan_timed(_facts(pool), rng_for(seed)), pool)
+            pool = content.exercises_in_lessons(completed)
+            return _Plan(seed, plan_timed(_facts(pool), rng_for(seed)))
 
 
-def _lesson_plan(db: Session, path_now: PathSnapshot, node: PathNode, seed: int, listening: bool) -> _Plan:
+def _lesson_plan(path_now: PathSnapshot, node: NodeRow, seed: int, listening: bool) -> _Plan:
     """The node's next lesson, every exercise in authored order."""
-    lesson = content_repo.lesson_at(db, node.id, path_now.facts[node.id].lessons_completed + 1)
+    position = path_now.facts[node.id].lessons_completed + 1
+    lesson = next((lesson for lesson in node.lessons if lesson.position == position), None)
     if lesson is None:  # an active node always has a next lesson
         raise RuntimeError(f"node {node.id} has no next lesson")
-    items = plan_lesson(_facts(lesson.exercises), listening_enabled=listening)
-    return _Plan(seed, items, lesson.exercises, lesson_id=lesson.id)
+    items = plan_lesson(_facts(path_now.content.lesson_exercises(lesson)), listening_enabled=listening)
+    return _Plan(seed, items, lesson_id=lesson.id)
 
 
 def _practice_plan(
     db: Session,
     ctx: RequestContext,
-    node: PathNode | None,
+    content: CourseContent,
+    node: NodeRow | None,
     completed: Collection[int],
     seed: int,
     listening: bool,
@@ -301,14 +324,12 @@ def _practice_plan(
     lesson_ids = (
         set(completed) if node is None else {lesson.id for lesson in node.lessons}.intersection(completed)
     )
-    pool = content_repo.exercises_in_lessons(db, lesson_ids)
+    pool = content.exercises_in_lessons(lesson_ids)
     mistakes = play_repo.recent_mistake_exercise_ids(db, ctx.user.id, since=ctx.now - MISTAKE_LOOKBACK)
-    return _Plan(
-        seed, plan_practice(_facts(pool), mistakes, rng_for(seed), listening_enabled=listening), pool
-    )
+    return _Plan(seed, plan_practice(_facts(pool), mistakes, rng_for(seed), listening_enabled=listening))
 
 
-def _requested_node(path_now: PathSnapshot, node_id: int | None) -> PathNode | None:
+def _requested_node(path_now: PathSnapshot, node_id: int | None) -> NodeRow | None:
     """The requested node of the learner's course; an unknown id is 404."""
     if node_id is None:
         return None
@@ -318,7 +339,7 @@ def _requested_node(path_now: PathSnapshot, node_id: int | None) -> PathNode | N
     return node
 
 
-def _required(node: PathNode | None) -> PathNode:
+def _required(node: NodeRow | None) -> NodeRow:
     if node is None:  # the request schema requires a node for lessons and legendary runs
         raise ValueError("this kind of session needs a node")
     return node
@@ -335,14 +356,13 @@ def _refusal_error(refusal: StartRefusal, ctx: RequestContext) -> errors.AppErro
             return _PLAIN_REFUSALS[refusal]()
 
 
-def _facts(pool: list[Exercise]) -> list[ExerciseFacts]:
+def _facts(pool: list[ExerciseRow]) -> list[ExerciseFacts]:
     return [ExerciseFacts(exercise.id, exercise.type, exercise.audio_only) for exercise in pool]
 
 
 def _create(db: Session, ctx: RequestContext, request: StartSessionIn, plan: _Plan) -> LessonSession:
-    """Insert the session and its initial items, numbered from 1 in play order."""
+    """Insert the session, then its initial items, numbered from 1 in play order, in one statement."""
     timed = request.kind == SessionKind.TIMED
-    exercise_by_id = {exercise.id: exercise for exercise in plan.pool}
     session = LessonSession(
         user_id=ctx.user.id,
         kind=request.kind,
@@ -354,18 +374,12 @@ def _create(db: Session, ctx: RequestContext, request: StartSessionIn, plan: _Pl
         last_activity_at=ctx.now,
         expires_at=ctx.now + timedelta(seconds=TIMED_START_SECONDS) if timed else None,
     )
-    session.items = [
-        SessionItem(
-            seq=seq,
-            exercise_id=planned.exercise_id,
-            exercise=exercise_by_id[planned.exercise_id],
-            origin=ItemOrigin.INITIAL,
-            from_mistakes=planned.from_mistakes,
-        )
-        for seq, planned in enumerate(plan.items, start=1)
-    ]
     db.add(session)
-    db.flush()  # gives the session its id, which the legendary fee and the response need
+    db.flush()  # gives the session its id, which its items, the legendary fee and the response need
+    play_repo.add_initial_items(
+        db, session.id, [(item.exercise_id, item.from_mistakes) for item in plan.items]
+    )
+    db.refresh(session, ["items"])
     return session
 
 
@@ -385,11 +399,11 @@ def _check_answerable(ctx: RequestContext, session: LessonSession, item: Session
         raise hearts_service.out_of_hearts(ctx.stats, ctx.settings)
 
 
-def _grade(db: Session, user: User, exercise: Exercise, body: AnswerIn) -> grading.Grade:
+def _grade(content: CourseContent, exercise: ExerciseRow, body: AnswerIn) -> grading.Grade:
     """Grade the answer, refusing one that does not fit the exercise with INVALID_ANSWER."""
     key, given = exercises.answer_key(exercise), exercises.to_answer(body)
     try:
-        return grading.grade(key, given, known_words=_course_words(db, user, exercise))
+        return grading.grade(key, given, known_words=_course_words(content, exercise))
     except grading.InvalidAnswer as exc:
         raise errors.InvalidAnswer(f"That answer doesn't fit this exercise: {exc}.") from exc
 
@@ -401,10 +415,10 @@ def _record(
     item.result, item.note, item.submitted_json, item.answered_at = result, note, submitted, now
 
 
-def _excuse_listening(session: LessonSession, submitted: str, now: datetime) -> None:
+def _excuse_listening(session: LessonSession, content: CourseContent, submitted: str, now: datetime) -> None:
     """CAN'T LISTEN NOW resolves every other unanswered listening item too, with no penalty."""
     for item in session.items:
-        if item.result is None and item.exercise.audio_only:
+        if item.result is None and content.exercise(item.exercise_id).audio_only:
             _record(item, ItemResult.CANT_LISTEN, None, submitted, now)
 
 
@@ -413,7 +427,6 @@ def _queue_retry(session: LessonSession, item: SessionItem) -> SessionItem:
     retry = SessionItem(
         seq=max(queued.seq for queued in session.items) + 1,
         exercise_id=item.exercise_id,
-        exercise=item.exercise,
         origin=ItemOrigin.RETRY,
         from_mistakes=False,
     )
@@ -436,7 +449,12 @@ def _retry_after(session: LessonSession, item: SessionItem) -> SessionItem | Non
 
 
 def _replay(
-    db: Session, ctx: RequestContext, session: LessonSession, item: SessionItem, body: AnswerIn
+    db: Session,
+    ctx: RequestContext,
+    content: CourseContent,
+    session: LessonSession,
+    item: SessionItem,
+    body: AnswerIn,
 ) -> AnswerResultOut:
     """Answer a repeated request the way the first one was answered, writing nothing.
 
@@ -445,11 +463,10 @@ def _replay(
     """
     wrong = item.result in session_flow.WRONG
     return _answer_out(
-        db,
-        ctx,
+        _scene(db, ctx, content, session),
         session,
         item,
-        _grade(db, ctx.user, item.exercise, body),
+        _grade(content, content.exercise(item.exercise_id), body),
         heart_lost=wrong and session_flow.rules_for(session.kind).hearts_enabled,
         retry=_retry_after(session, item) if wrong else None,
         replayed=True,
@@ -457,8 +474,7 @@ def _replay(
 
 
 def _answer_out(
-    db: Session,
-    ctx: RequestContext,
+    scene: Scene,
     session: LessonSession,
     item: SessionItem,
     grade: grading.Grade,
@@ -468,7 +484,7 @@ def _answer_out(
     replayed: bool,
 ) -> AnswerResultOut:
     """The feedback bar's verdict plus the session's state after the answer."""
-    scene = _scene(db, ctx, session)
+    exercise = scene.content.exercise(item.exercise_id)
     numbers = session_views.tally(session)
     return AnswerResultOut(
         item_id=item.id,
@@ -477,14 +493,14 @@ def _answer_out(
         is_correct=grade.result == ItemResult.CORRECT,
         note=grade.note,
         correct_answer=grade.correct_answer,
-        meaning=item.exercise.text_translation if item.exercise.audio_only else None,
+        meaning=exercise.text_translation if exercise.audio_only else None,
         heart_lost=heart_lost,
         hearts=scene.hearts,
         progress=numbers.progress,
         mistakes=numbers.mistakes,
         combo=numbers.combo,
         best_combo=numbers.best_combo,
-        appended_item=None if retry is None else session_views.item_out(retry, session, scene.style),
+        appended_item=None if retry is None else session_views.item_out(retry, session, scene),
         session=session_views.state_out(session, scene),
     )
 
@@ -505,26 +521,23 @@ def _end(session: LessonSession, status: SessionStatus, reason: EndReason, now: 
     session.status, session.end_reason, session.ended_at = status, reason, now
 
 
-def _scene(db: Session, ctx: RequestContext, session: LessonSession) -> Scene:
+def _content(db: Session, ctx: RequestContext) -> CourseContent:
+    """The learner's course: every session is played in it."""
+    return reference.course_content(db, ctx.user.current_course_id)
+
+
+def _scene(db: Session, ctx: RequestContext, content: CourseContent, session: LessonSession) -> Scene:
     """What every view of the session needs: its node, the prompt style and the learner's hearts."""
-    node = None if session.node_id is None else content_repo.get_node(db, session.node_id)
     return Scene(
-        node=node,
-        style=_prompt_style(db, ctx.user, session.kind),
+        content=content,
+        node=None if session.node_id is None else content.node(session.node_id),
+        style=PromptStyle(
+            learning_language=TextLang(content.course.learning_language),
+            glossary=content.glossary,
+            hints_enabled=session_flow.rules_for(session.kind).hints_enabled,  # none in legendary runs
+        ),
         hearts=hearts_service.hearts_out(db, ctx.stats, ctx.settings),
         now=ctx.now,
-    )
-
-
-def _prompt_style(db: Session, user: User, kind: SessionKind) -> PromptStyle:
-    """The course's language and word hints; hints are hidden in legendary runs."""
-    course = path_service.course_of(db, user)
-    language = TextLang(course.learning_language)
-    terms = content_repo.glossary(db, course.id, language)
-    return PromptStyle(
-        learning_language=language,
-        glossary=hints.Glossary(language, {term.term: term.hint for term in terms}),
-        hints_enabled=session_flow.rules_for(kind).hints_enabled,
     )
 
 
@@ -551,7 +564,7 @@ def _lost_race(db: Session, session_id: int) -> CompletionReceipt:
     raise errors.SessionNotActive(session.status, session.end_reason)
 
 
-def _course_words(db: Session, user: User, exercise: Exercise) -> frozenset[str]:
+def _course_words(content: CourseContent, exercise: ExerciseRow) -> frozenset[str]:
     """The course's words in the language a typed answer to `exercise` is written in.
 
     They keep the typo rule from forgiving a slip that spells another real word. Exercises that are
@@ -559,28 +572,4 @@ def _course_words(db: Session, user: User, exercise: Exercise) -> frozenset[str]
     """
     if exercise.type not in grading.TYPED_TYPES:
         return frozenset()
-    return _vocabulary(db, user.current_course_id)[exercises.answer_language(exercise)]
-
-
-def _vocabulary(db: Session, course_id: int) -> dict[TextLang, frozenset[str]]:
-    """A course's words by language, built on first use and then reused (see `_VOCABULARY`)."""
-    key = (str(db.get_bind().url), course_id)
-    if key not in _VOCABULARY:
-        _VOCABULARY[key] = _collect_vocabulary(db, course_id)
-    return _VOCABULARY[key]
-
-
-def _collect_vocabulary(db: Session, course_id: int) -> dict[TextLang, frozenset[str]]:
-    """A course's words by language: its glossary terms and every written text of its exercises."""
-    course = content_repo.get_course(db, course_id)
-    if course is None:
-        raise RuntimeError(f"course {course_id} is missing")
-    learning, native = TextLang(course.learning_language), TextLang(course.from_language)
-    texts = {
-        language: [term.term for term in content_repo.glossary(db, course_id, language)]
-        for language in TextLang
-    }
-    for exercise in content_repo.course_exercises(db, course_id):
-        for language, text in exercises.written_texts(exercise, learning, native):
-            texts[language].append(text)
-    return {language: grading.vocabulary(words, language) for language, words in texts.items()}
+    return content.vocabulary[exercise.answer_language]

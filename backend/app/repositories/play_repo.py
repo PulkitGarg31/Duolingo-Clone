@@ -1,16 +1,17 @@
 """Sessions and their item queues, and the progress facts derived from completed sessions."""
 
+from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import ColumnElement, distinct, func, select, update
+from sqlalchemy import ColumnElement, distinct, func, insert, select, update
 from sqlalchemy.orm import Session, selectinload
 
-from app.domain.enums import EndReason, ItemResult, SessionKind, SessionStatus
+from app.domain.enums import EndReason, ItemOrigin, ItemResult, SessionKind, SessionStatus
 from app.models import LessonSession, SessionItem
-from app.repositories.content_repo import EXERCISE_CHILDREN
 
-# A session view needs every item's exercise and the exercise's children.
-_WITH_QUEUE = selectinload(LessonSession.items).selectinload(SessionItem.exercise).options(*EXERCISE_CHILDREN)
+# A session is read with its queue. The exercises themselves come from the course content, which is
+# read once per database (services/reference.py), so they are not loaded with every session.
+_WITH_QUEUE = selectinload(LessonSession.items)
 _MISTAKES = (ItemResult.INCORRECT, ItemResult.SKIPPED)
 
 
@@ -38,6 +39,26 @@ def get_owned_session(db: Session, user_id: int, session_id: int) -> LessonSessi
         select(LessonSession)
         .where(LessonSession.id == session_id, LessonSession.user_id == user_id)
         .options(_WITH_QUEUE)
+    )
+
+
+def add_initial_items(db: Session, session_id: int, planned: Sequence[tuple[int, bool]]) -> None:
+    """Insert a new session's planned items, numbered from 1 in play order, in one statement.
+
+    Each planned item is (exercise id, whether practice picked it from the learner's mistakes).
+    """
+    db.execute(
+        insert(SessionItem),
+        [
+            {
+                "session_id": session_id,
+                "seq": seq,
+                "exercise_id": exercise_id,
+                "origin": ItemOrigin.INITIAL,
+                "from_mistakes": from_mistakes,
+            }
+            for seq, (exercise_id, from_mistakes) in enumerate(planned, start=1)
+        ],
     )
 
 
@@ -95,11 +116,9 @@ def legendary_node_ids(db: Session, user_id: int) -> set[int]:
     return {node_id for node_id in db.scalars(query) if node_id is not None}
 
 
-def completed_lesson_ids(db: Session, user_id: int, *, node_id: int | None = None) -> set[int]:
-    """Lessons the learner has completed, optionally only one node's: what practice draws from."""
+def completed_lesson_ids(db: Session, user_id: int) -> set[int]:
+    """Lessons the learner has completed: what practice and timed practice draw from."""
     query = select(LessonSession.lesson_id).where(*_completed(user_id, SessionKind.LESSON))
-    if node_id is not None:
-        query = query.where(LessonSession.node_id == node_id)
     return {lesson_id for lesson_id in db.scalars(query) if lesson_id is not None}
 
 

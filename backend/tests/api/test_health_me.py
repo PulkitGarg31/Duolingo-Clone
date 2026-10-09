@@ -1,11 +1,21 @@
 """GET /health, GET /me and the settings on the seeded demo, and per-learner isolation through X-User-Id."""
 
 import re
+from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
+from app import main
+from app.api.deps import get_db
+from app.core.clock import FrozenClock
+from app.core.db import make_engine, make_session_factory
+from app.models import AppState
 from tests.api.contract_keys import CONTRACT_KEYS
+from tests.api.probes import client_settings
+from tests.conftest import FROZEN_NOW, api_settings
 from tests.helpers import API, as_user, assert_problem, get_me, node_at, path_nodes, start_session
 
 # The nested objects of MeOut and the contract interface each one follows.
@@ -32,6 +42,29 @@ def test_health_reports_the_seeded_demo_and_the_boot_id(client: TestClient) -> N
     assert (body["status"], body["seeded"], body["serverTime"]) == ("ok", True, "2026-10-08T12:00:00Z")
     assert re.fullmatch(r"[0-9a-f]{32}", body["bootId"])
     assert response.headers["x-boot-id"] == body["bootId"]
+
+
+def test_the_real_startup_builds_and_seeds_an_empty_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The app's own startup, pointed at an empty file: tables, the demo seed, then the reference data.
+    engine = make_engine(f"sqlite:///{(tmp_path / 'boot' / 'app.db').as_posix()}")
+    sessions = make_session_factory(engine)
+    monkeypatch.setattr(main, "engine", engine)
+    monkeypatch.setattr(main, "SessionLocal", sessions)
+    app = main.create_app(api_settings(str(engine.url)))
+
+    def get_test_db() -> Iterator[Session]:
+        with sessions() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = get_test_db
+    try:
+        with TestClient(app) as client:
+            assert client.get(f"{API}/health").json()["seeded"] is True
+            assert client.get(f"{API}/me").json()["streak"]["current"] == 13
+    finally:
+        engine.dispose()
 
 
 def test_me_has_exactly_the_contract_keys(client: TestClient) -> None:
@@ -178,3 +211,31 @@ def test_turning_listening_off_leaves_listening_exercises_out(client: TestClient
     assert not any(item["exercise"].get("audioOnly") for item in lesson["items"])
     practice = start_session(client, {"kind": "practice"})
     assert not any(item["exercise"].get("audioOnly") for item in practice["items"])
+
+
+# ---- GET /health on an empty database ----
+
+
+def test_health_reports_an_unseeded_database(bare_client: TestClient) -> None:
+    response = bare_client.get(f"{API}/health")
+    body = response.json()
+    assert response.status_code == 200
+    assert set(body) == CONTRACT_KEYS["HealthOut"]
+    assert (body["status"], body["seeded"], body["version"]) == (
+        "ok",
+        False,
+        client_settings(bare_client).app_version,
+    )
+    assert body["bootedAt"].endswith("Z")
+
+
+def test_health_reports_seeding_and_the_demo_clock(
+    bare_client: TestClient, db: Session, clock: FrozenClock
+) -> None:
+    db.add(AppState(id=1, clock_offset_seconds=3600, seeded_at=FROZEN_NOW, seed_version="test"))
+    db.commit()
+    body = bare_client.get(f"{API}/health").json()
+    assert body["seeded"] is True
+    assert body["serverTime"] == "2026-10-08T13:00:00Z"  # real time plus the one-hour offset
+    clock.advance(minutes=30)
+    assert bare_client.get(f"{API}/health").json()["serverTime"] == "2026-10-08T13:30:00Z"

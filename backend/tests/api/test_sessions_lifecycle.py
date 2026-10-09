@@ -242,6 +242,17 @@ def test_answering_keeps_a_session_alive(
     assert get_me(client)["activeSession"]["id"] == session["id"]
 
 
+def test_resuming_keeps_a_session_alive(
+    client: TestClient, clock: FrozenClock, seeded_engine: Engine
+) -> None:
+    session = start_session(client, lesson_on(client, DRINKS))
+    clock.advance(hours=1, minutes=59)
+    resumed = start_session(client, lesson_on(client, DRINKS))  # the learner comes back to the lesson
+    assert (resumed["id"], resumed["resumed"]) == (session["id"], True)
+    clock.advance(minutes=5)  # a few minutes on the exercise: well past two hours since the start
+    assert len(answer_items(client, seeded_engine, resumed, limit=1)) == 1
+
+
 # ---- completing ----
 
 

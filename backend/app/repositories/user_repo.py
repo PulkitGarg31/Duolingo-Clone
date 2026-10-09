@@ -24,10 +24,6 @@ def get_stats(db: Session, user_id: int) -> UserStats | None:
     return db.get(UserStats, user_id)
 
 
-def get_bot_profile(db: Session, user_id: int) -> BotProfile | None:
-    return db.get(BotProfile, user_id)
-
-
 def bot_ids(db: Session) -> list[int]:
     """Every bot's user id in ascending order: the pool cohorts draw their bots from."""
     return list(db.scalars(select(BotProfile.user_id).order_by(BotProfile.user_id)))

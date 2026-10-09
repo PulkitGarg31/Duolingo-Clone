@@ -14,7 +14,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.types import checked_bool, str_enum
 from app.domain.enums import EndReason, GradeNote, ItemOrigin, ItemResult, SessionKind, SessionStatus
 from app.models.base import Base
-from app.models.content import Exercise
 
 
 class LessonSession(Base):
@@ -109,7 +108,6 @@ class SessionItem(Base):
     answered_at: Mapped[datetime | None]
 
     session: Mapped[LessonSession] = relationship(back_populates="items")
-    exercise: Mapped[Exercise] = relationship()
 
     __table_args__ = (
         sa.UniqueConstraint("session_id", "seq"),

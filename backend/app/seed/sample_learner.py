@@ -6,7 +6,6 @@ never disagree with the data. No service is replayed. `reset_demo` wipes every u
 and applies the history again, relative to a new instant.
 """
 
-from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Final
@@ -33,7 +32,7 @@ from app.models import (
     UserStats,
     XpEvent,
 )
-from app.repositories import content_repo, gamification_repo, system_repo, user_repo
+from app.repositories import system_repo, user_repo
 from app.seed.history import (
     BotInfo,
     ExerciseInfo,
@@ -50,7 +49,7 @@ from app.seed.history import (
 )
 from app.seed.schema import SampleLearnerFile
 from app.seed.validate import DATA_DIR, load_bundle
-from app.services import achievement_service, exercises
+from app.services import achievement_service, exercises, reference
 
 # Learner-side tables, children before parents. A reset empties them for every user; content,
 # catalogues, bot users and bot profiles stay.
@@ -75,23 +74,29 @@ LEARNER_TABLES: Final = (
 
 def load_world(db: Session, course_id: int) -> SampleWorld:
     """Read the course's content, the shop and the bot pool that the plan works from."""
-    by_lesson: defaultdict[int, list[ExerciseInfo]] = defaultdict(list)
-    for exercise in sorted(content_repo.course_exercises(db, course_id), key=lambda e: e.position):
-        by_lesson[exercise.lesson_id].append(ExerciseInfo(exercise.id, exercises.answer_key(exercise)))
+    content = reference.course_content(db, course_id)
     nodes = tuple(
         NodeInfo(
             node.id,
             node.key,
             node.kind,
             node.chest_gems,
-            tuple(LessonInfo(lesson.id, tuple(by_lesson[lesson.id])) for lesson in node.lessons),
+            tuple(
+                LessonInfo(
+                    lesson.id,
+                    tuple(
+                        ExerciseInfo(exercise.id, exercises.answer_key(exercise))
+                        for exercise in content.lesson_exercises(lesson)
+                    ),
+                )
+                for lesson in node.lessons
+            ),
         )
-        for unit in content_repo.course_path(db, course_id)
-        for node in unit.nodes
+        for node in content.nodes()
     )
     shop = {
         item.code: ShopInfo(item.id, item.kind, item.price_gems, item.duration_minutes)
-        for item in gamification_repo.shop_items(db)
+        for item in reference.catalog(db).shop_items
     }
     profiles = db.scalars(select(BotProfile).order_by(BotProfile.user_id))
     bots = tuple(BotInfo(profile.user_id, profile.rng_seed, profile.daily_xp) for profile in profiles)

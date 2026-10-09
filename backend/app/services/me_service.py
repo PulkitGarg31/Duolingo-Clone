@@ -22,13 +22,17 @@ from app.schemas.me import (
 )
 from app.services import hearts_service, league_service, path_service, settings_service, streak_service
 from app.services.context import RequestContext
+from app.services.league_service import LeagueWeek
 
 
-def build_me(db: Session, ctx: RequestContext) -> MeOut:
-    """The learner's whole shell state: top bar stats, daily goal, league card and pending modals."""
+def build_me(db: Session, ctx: RequestContext, league_week: LeagueWeek | None = None) -> MeOut:
+    """The learner's whole shell state: top bar stats, daily goal, league card and pending modals.
+
+    A completion passes the league week it has just read, so the cohort is not ranked twice.
+    """
     user, stats = ctx.user, ctx.stats
     week_start, week_end = league_week_bounds(league_week_start(ctx.now))
-    xp_today = ledger_repo.xp_on(db, user.id, ctx.today)
+    earned = ledger_repo.xp_totals(db, user.id, ctx.today, week_start, week_end)
     goal = ctx.preferences.daily_goal_xp
     active = play_repo.active_session(db, user.id)
     return MeOut(
@@ -36,16 +40,12 @@ def build_me(db: Session, ctx: RequestContext) -> MeOut:
         course=path_service.course_brief(path_service.course_of(db, user)),
         server_now=ctx.now,
         local_date=ctx.today,
-        xp=MeXp(
-            total=ledger_repo.total_xp(db, user.id),
-            today=xp_today,
-            this_week=ledger_repo.xp_between(db, user.id, week_start, week_end),
-        ),
+        xp=MeXp(total=earned.total, today=earned.on_day, this_week=earned.in_window),
         gems=stats.gems,
         hearts=hearts_service.hearts_out(db, stats, ctx.settings),
         streak=_streak(db, ctx),
-        daily_goal=DailyGoalOut(goal_xp=goal, earned_xp=xp_today, met=xp_today >= goal),
-        league=league_service.me_league(db, ctx),
+        daily_goal=DailyGoalOut(goal_xp=goal, earned_xp=earned.on_day, met=earned.on_day >= goal),
+        league=league_service.me_league(db, ctx, league_week),
         xp_boost=_xp_boost(ctx),
         active_session=None
         if active is None

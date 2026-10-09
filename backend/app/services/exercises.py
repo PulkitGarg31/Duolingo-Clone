@@ -1,19 +1,20 @@
-"""Exercise rows as the lesson player sees them and as the grading rules see them.
+"""Exercises as the lesson player sees them and as the grading rules see them.
 
 `payload` builds an exercise's public view. It never reveals the answer, with two deliberate
 exceptions: a match pair carries the same id in both columns (per-tap feedback needs it), and a
 listening prompt carries its sentence for the browser to speak (it is never displayed).
-`answer_key`, `to_answer` and `written_texts` adapt rows and request bodies to the pure rules.
+`answer_key`, `to_answer` and `canonical_json` adapt exercises and request bodies to the pure rules.
 """
 
+import json
 import random
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from app.domain import grading, hints
+from app.domain.content import ExerciseRow
 from app.domain.enums import ExerciseType, TextLang
 from app.domain.rules import SPECIAL_CHARACTERS_ES
-from app.models import Exercise
 from app.schemas.exercises import (
     ChoiceOptionOut,
     ExerciseOut,
@@ -51,7 +52,7 @@ class PromptStyle:
 # ---- payloads ----
 
 
-def payload(exercise: Exercise, style: PromptStyle, rng: random.Random) -> ExerciseOut:
+def payload(exercise: ExerciseRow, style: PromptStyle, rng: random.Random) -> ExerciseOut:
     """The exercise as the player renders it. `rng` shuffles choices and match columns, so the same
     item always shows the same order."""
     match exercise.type:
@@ -68,7 +69,7 @@ def payload(exercise: Exercise, style: PromptStyle, rng: random.Random) -> Exerc
                 ],
             )
         case ExerciseType.TRANSLATE:
-            language = answer_language(exercise)
+            language = exercise.answer_language
             return TranslateExercise(
                 id=exercise.id,
                 instruction=exercise.instruction,
@@ -90,7 +91,7 @@ def payload(exercise: Exercise, style: PromptStyle, rng: random.Random) -> Exerc
                 ],
             )
         case ExerciseType.FILL_BLANK:
-            before, after = _sentence(exercise)[0].split(grading.BLANK, 1)
+            before, after = exercise.sentence[0].split(grading.BLANK, 1)
             return FillBlankExercise(
                 id=exercise.id,
                 instruction=exercise.instruction,
@@ -103,7 +104,7 @@ def payload(exercise: Exercise, style: PromptStyle, rng: random.Random) -> Exerc
                 ],
             )
         case ExerciseType.TYPE_ANSWER:
-            language = answer_language(exercise)
+            language = exercise.answer_language
             return TypeAnswerExercise(
                 id=exercise.id,
                 instruction=exercise.instruction,
@@ -114,13 +115,13 @@ def payload(exercise: Exercise, style: PromptStyle, rng: random.Random) -> Exerc
             )
 
 
-def _prompt(exercise: Exercise, style: PromptStyle) -> PromptOut:
+def _prompt(exercise: ExerciseRow, style: PromptStyle) -> PromptOut:
     """The exercise's sentence, split into hint segments that concatenate back to it.
 
     A listening sentence is heard, never shown, so it has no segments. Without hints the sentence
     is one plain segment.
     """
-    text, language = _sentence(exercise)
+    text, language = exercise.sentence
     if exercise.audio_only:
         segments: list[PromptSegment] = []
     elif style.hints_enabled:
@@ -133,18 +134,6 @@ def _prompt(exercise: Exercise, style: PromptStyle) -> PromptOut:
     return PromptOut(
         text=text, language=language, speak=language == style.learning_language, segments=segments
     )
-
-
-def _sentence(exercise: Exercise) -> tuple[str, TextLang]:
-    """The sentence and its language; the schema requires both for every type that shows one."""
-    if exercise.text is None or exercise.text_language is None:
-        raise ValueError(f"exercise {exercise.id} has no sentence")
-    return exercise.text, exercise.text_language
-
-
-def answer_language(exercise: Exercise) -> TextLang:
-    """The language a written answer to a translate or type-answer exercise is in."""
-    return grading.answer_language(_sentence(exercise)[1], audio_only=exercise.audio_only)
 
 
 def _special_characters(language: TextLang) -> list[str]:
@@ -161,7 +150,7 @@ def _shuffled[T](items: Iterable[T], rng: random.Random) -> list[T]:
 # ---- grading adapters ----
 
 
-def answer_key(exercise: Exercise) -> grading.AnswerKey:
+def answer_key(exercise: ExerciseRow) -> grading.AnswerKey:
     """What grading needs to know about the exercise; accepted answers come primary first."""
     return grading.AnswerKey(
         type=exercise.type,
@@ -171,7 +160,7 @@ def answer_key(exercise: Exercise) -> grading.AnswerKey:
         options=tuple(
             grading.Option(option.id, option.text, option.is_correct) for option in exercise.options
         ),
-        accepted=tuple(answer.text for answer in exercise.answers),
+        accepted=exercise.answers,
         pair_ids=frozenset(pair.id for pair in exercise.pairs),
     )
 
@@ -198,26 +187,6 @@ def to_answer(body: AnswerIn) -> grading.Answer:
     raise TypeError(f"unsupported answer {body!r}")  # the request schema allows nothing else
 
 
-def written_texts(exercise: Exercise, learning: TextLang, native: TextLang) -> Iterator[tuple[TextLang, str]]:
-    """Each text of the exercise a learner might type or tap, with the language it is written in.
-
-    Accepted answers and word-bank tiles are in the answer's language and fill-in choices in the
-    sentence's. Multiple-choice options are in the language opposite the prompt, or in the
-    learning language when there is no prompt ("Which one of these is 'the bread'?"). A match pair
-    gives one text in each language.
-    """
-    match exercise.type:
-        case ExerciseType.MATCH_PAIRS:
-            for pair in exercise.pairs:
-                yield learning, pair.learning_text
-                yield native, pair.native_text
-        case ExerciseType.MULTIPLE_CHOICE:
-            language = learning if exercise.text is None else answer_language(exercise)
-            yield from ((language, option.text) for option in exercise.options)
-        case ExerciseType.FILL_BLANK:
-            language = _sentence(exercise)[1]
-            yield from ((language, option.text) for option in exercise.options)
-        case ExerciseType.TRANSLATE | ExerciseType.TYPE_ANSWER:
-            language = answer_language(exercise)
-            yield from ((language, answer.text) for answer in exercise.answers)
-            yield from ((language, tile.text) for tile in exercise.options)
+def canonical_json(body: AnswerIn) -> str:
+    """The answer payload in one canonical text form: a repeated request is compared against it."""
+    return json.dumps(body.model_dump(by_alias=True), sort_keys=True, separators=(",", ":"))

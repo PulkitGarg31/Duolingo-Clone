@@ -11,12 +11,11 @@ from sqlalchemy.orm import Session
 from app.core import errors
 from app.core.config import Settings
 from app.domain import hearts
-from app.domain.enums import ShopItemCode
 from app.domain.hearts import HeartsState
 from app.domain.rules import MAX_HEARTS
 from app.models import UserStats
-from app.repositories import gamification_repo
 from app.schemas.common import HeartsOut
+from app.services import reference
 from app.services.context import RequestContext
 
 
@@ -79,16 +78,8 @@ def hearts_out(db: Session, stats: UserStats, settings: Settings) -> HeartsOut:
         next_heart_at=hearts.next_heart_at(state, interval),
         full_at=hearts.full_at(state, interval),
         regen_interval_seconds=int(interval.total_seconds()),
-        refill_price_gems=refill_price(db),
+        refill_price_gems=reference.catalog(db).refill_price,
     )
-
-
-def refill_price(db: Session) -> int:
-    """The one price of a heart refill, read from the shop catalogue."""
-    item = gamification_repo.shop_item_by_code(db, ShopItemCode.HEART_REFILL)
-    if item is None:  # the seed validator requires this item
-        raise RuntimeError("the shop catalogue has no heart refill")
-    return item.price_gems
 
 
 def _store(stats: UserStats, state: HeartsState, now: datetime) -> None:

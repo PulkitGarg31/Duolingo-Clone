@@ -1,7 +1,8 @@
 """The learning path: each node's derived state, the path view, and opening treasure chests.
 
 Node progress is never stored. Three small queries (lessons completed per node, passed legendary
-runs, opened chests) feed the pure path rules, which decide every node's state in course order.
+runs, opened chests) feed the pure path rules, which decide every node's state in course order. The
+course itself is reference data, read once per database.
 """
 
 from dataclasses import dataclass
@@ -10,13 +11,14 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ChestLocked, NodeNotPlayable, NotFound
 from app.domain import path
+from app.domain.content import CourseContent, CourseRow, NodeRow, UnitRow
 from app.domain.enums import GemReason, NodeKind, NodeState
 from app.domain.path import NodeFacts
-from app.models import Course, PathNode, Unit, User
-from app.repositories import content_repo, ledger_repo, play_repo
+from app.models import User
+from app.repositories import ledger_repo, play_repo
 from app.schemas.common import CourseBrief
 from app.schemas.path import ChestClaimOut, PathNodeActions, PathNodeOut, PathOut, PathUnitOut
-from app.services import gems_service
+from app.services import gems_service, reference
 from app.services.context import RequestContext
 
 
@@ -24,14 +26,22 @@ from app.services.context import RequestContext
 class PathSnapshot:
     """A learner's path at one moment: the course content in path order, with each node's facts and state."""
 
-    course: Course
-    units: list[Unit]  # in order, each with its nodes (in order) and their lessons loaded
+    content: CourseContent
     facts: dict[int, NodeFacts]  # by node id
     states: dict[int, NodeState]  # by node id, in course order
 
-    def node(self, node_id: int) -> PathNode | None:
+    @property
+    def course(self) -> CourseRow:
+        return self.content.course
+
+    @property
+    def units(self) -> tuple[UnitRow, ...]:
+        """The units in order, each with its nodes in order."""
+        return self.content.units
+
+    def node(self, node_id: int) -> NodeRow | None:
         """The node with this id, if it belongs to this course."""
-        return next((node for unit in self.units for node in unit.nodes if node.id == node_id), None)
+        return self.content.node(node_id)
 
     def finished_node_ids(self) -> set[int]:
         """Nodes that are completed or legendary."""
@@ -39,9 +49,8 @@ class PathSnapshot:
 
 
 def snapshot(db: Session, user: User) -> PathSnapshot:
-    """Load the learner's current course and derive every node's state."""
-    course = course_of(db, user)
-    units = content_repo.course_path(db, course.id)
+    """The learner's current course with every node's state, derived from the learner's facts."""
+    content = reference.course_content(db, user.current_course_id)
     lessons_done = play_repo.lessons_completed_by_node(db, user.id)
     legendary = play_repo.legendary_node_ids(db, user.id)
     chests = ledger_repo.claimed_chest_node_ids(db, user.id)
@@ -54,21 +63,17 @@ def snapshot(db: Session, user: User) -> PathSnapshot:
             legendary=node.id in legendary,
             chest_claimed=node.id in chests,
         )
-        for unit in units
-        for node in unit.nodes
+        for node in content.nodes()
     }
-    return PathSnapshot(course, units, facts, path.node_states(facts.values()))
+    return PathSnapshot(content, facts, path.node_states(facts.values()))
 
 
-def course_of(db: Session, user: User) -> Course:
+def course_of(db: Session, user: User) -> CourseRow:
     """The course the learner is taking."""
-    course = content_repo.get_course(db, user.current_course_id)
-    if course is None:  # users.current_course_id is a foreign key
-        raise RuntimeError(f"course {user.current_course_id} is missing")
-    return course
+    return reference.course_content(db, user.current_course_id).course
 
 
-def course_brief(course: Course) -> CourseBrief:
+def course_brief(course: CourseRow) -> CourseBrief:
     """A course as the course menu and the top bar show it."""
     return CourseBrief.model_validate(course)
 
@@ -76,11 +81,10 @@ def course_brief(course: Course) -> CourseBrief:
 def path_view(db: Session, ctx: RequestContext) -> PathOut:
     """The whole path: units in order, each node with its state, crown, progress and actions."""
     path_now = snapshot(db, ctx.user)
-    with_guidebook = content_repo.unit_ids_with_guidebook(db, path_now.course.id)
     return PathOut(
         course=course_brief(path_now.course),
         current_node_id=path.current_node_id(path_now.states),
-        units=[_unit_out(unit, path_now, unit.id in with_guidebook) for unit in path_now.units],
+        units=[_unit_out(unit, path_now) for unit in path_now.units],
     )
 
 
@@ -104,7 +108,7 @@ def claim_chest(db: Session, ctx: RequestContext, node_id: int) -> ChestClaimOut
     return ChestClaimOut(node_id=node_id, gems_awarded=node.chest_gems, gems=ctx.stats.gems, replayed=False)
 
 
-def _unit_out(unit: Unit, path_now: PathSnapshot, has_guidebook: bool) -> PathUnitOut:
+def _unit_out(unit: UnitRow, path_now: PathSnapshot) -> PathUnitOut:
     return PathUnitOut(
         id=unit.id,
         number=unit.position,
@@ -113,12 +117,12 @@ def _unit_out(unit: Unit, path_now: PathSnapshot, has_guidebook: bool) -> PathUn
         description=unit.description,
         color=unit.color,
         state=path.unit_state([(node.kind, path_now.states[node.id]) for node in unit.nodes]),
-        has_guidebook=has_guidebook,
+        has_guidebook=unit.has_guidebook,
         nodes=[_node_out(node, path_now.facts[node.id], path_now.states[node.id]) for node in unit.nodes],
     )
 
 
-def _node_out(node: PathNode, facts: NodeFacts, state: NodeState) -> PathNodeOut:
+def _node_out(node: NodeRow, facts: NodeFacts, state: NodeState) -> PathNodeOut:
     return PathNodeOut(
         id=node.id,
         position=node.position,

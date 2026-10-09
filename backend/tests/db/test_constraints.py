@@ -39,7 +39,7 @@ from app.domain.enums import (
     XpReason,
 )
 from app.domain.rng import stable_seed
-from app.domain.rules import CHEST_GEMS, LEGENDARY_PRICE_GEMS, MAX_STREAK_FREEZES
+from app.domain.rules import LEGENDARY_PRICE_GEMS, MAX_STREAK_FREEZES
 from app.models import (
     ActivityDay,
     AppState,
@@ -69,6 +69,7 @@ from app.models import (
 )
 
 ANCHOR = datetime(2026, 10, 8, 10, 0, tzinfo=UTC)  # a heart-regeneration anchor two hours ago
+CHEST_GEMS = 20  # what a chest holds in the seed files
 
 
 @dataclass

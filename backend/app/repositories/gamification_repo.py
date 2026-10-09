@@ -52,11 +52,3 @@ def claimed_quest_ids(db: Session, user_id: int, day: date) -> set[int]:
 def shop_items(db: Session) -> list[ShopItem]:
     """The shop catalogue in display order, including items that are coming soon."""
     return list(db.scalars(select(ShopItem).order_by(ShopItem.position)))
-
-
-def get_shop_item(db: Session, item_id: int) -> ShopItem | None:
-    return db.get(ShopItem, item_id)
-
-
-def shop_item_by_code(db: Session, code: str) -> ShopItem | None:
-    return db.scalar(select(ShopItem).where(ShopItem.code == code))

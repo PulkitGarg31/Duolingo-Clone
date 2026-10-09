@@ -6,6 +6,8 @@ here is a moment of the first screen: a 13-day streak at risk with a freeze equi
 level 2. The template database is seeded once per test run; each test reads its own copy.
 """
 
+import subprocess
+import sys
 import time
 import warnings
 from collections import Counter
@@ -24,6 +26,7 @@ from app.domain.enums import (
     AchievementMetric,
     ActivityKind,
     EndReason,
+    ExerciseType,
     GemReason,
     LeagueOutcome,
     NodeKind,
@@ -132,7 +135,8 @@ class TestHistory:
         week_start, week_end = league_week_bounds(league_week_start(FROZEN_NOW))
         assert ledger_repo.total_xp(seeded_db, learner.id) == 373
         assert ledger_repo.xp_on(seeded_db, learner.id, D) == 0
-        assert ledger_repo.xp_between(seeded_db, learner.id, week_start, week_end) == 14 + 15 + 13
+        totals = ledger_repo.xp_totals(seeded_db, learner.id, D, week_start, week_end)
+        assert (totals.total, totals.on_day, totals.in_window) == (373, 0, 14 + 15 + 13)
 
     def test_23_completed_sessions_of_which_11_are_lessons(self, seeded_db: Session, learner: User) -> None:
         sessions = sessions_of(seeded_db, learner.id)
@@ -248,7 +252,7 @@ class TestLeagues:
         assert [m.final_rank for m in members] == list(range(1, 31))
         mine = next(m for m in members if m.user_id == learner.id)
         start, end = league_week_bounds(cohort.week_start)
-        assert mine.final_xp == ledger_repo.xp_between(seeded_db, learner.id, start, end) == 112
+        assert mine.final_xp == ledger_repo.xp_totals(seeded_db, learner.id, D, start, end).in_window == 112
         assert (mine.outcome, mine.result_seen_at) == (LeagueOutcome.PROMOTED, None)
         assert mine.joined_at == min(
             seeded_db.scalars(
@@ -299,7 +303,7 @@ class TestAchievements:
         assert {(unlocked_at, session_id) for _, _, unlocked_at, session_id in rows} == {(FROZEN_NOW, None)}
 
     def test_the_learner_statistics(self, seeded_db: Session, learner: User) -> None:
-        assert achievement_service.metrics_for(seeded_db, learner.id, FROZEN_NOW) == {
+        assert achievement_service.metrics_for(seeded_db, learner, FROZEN_NOW) == {
             Metric.LONGEST_STREAK: 13,
             Metric.TOTAL_XP: 373,
             Metric.WORDS_LEARNED: 38,  # Say hello 14 + Introduce yourself 15 + Food 9: Scholar stays at 0
@@ -312,7 +316,8 @@ class TestAchievements:
     def test_the_profile_lists_all_seven_with_levels_and_dates(
         self, seeded_db: Session, learner: User
     ) -> None:
-        badges = achievement_service.list_for_profile(seeded_db, learner.id, FROZEN_NOW, is_bot=False)
+        metrics = achievement_service.metrics_for(seeded_db, learner, FROZEN_NOW)
+        badges = achievement_service.list_for_profile(seeded_db, learner.id, metrics, is_bot=False)
         assert [(b.code, b.level, b.current_value, b.next_threshold) for b in badges] == [
             ("wildfire", 2, 13, 14),
             ("sage", 2, 373, 500),
@@ -332,11 +337,11 @@ class TestAchievements:
             select(BotProfile).join(LeagueMembership, LeagueMembership.user_id == BotProfile.user_id)
         )
         assert bot is not None
-        metrics = achievement_service.metrics_for(seeded_db, bot.user_id, FROZEN_NOW)
+        metrics = achievement_service.metrics_for(seeded_db, bot.user, FROZEN_NOW)
         assert metrics[Metric.LONGEST_STREAK] == bot.baseline_streak
         assert metrics[Metric.TOTAL_XP] > bot.baseline_xp  # plus its league weeks
         assert metrics[Metric.WORDS_LEARNED] == metrics[Metric.PERFECT_LESSONS] == 0
-        badges = achievement_service.list_for_profile(seeded_db, bot.user_id, FROZEN_NOW, is_bot=True)
+        badges = achievement_service.list_for_profile(seeded_db, bot.user_id, metrics, is_bot=True)
         assert len(badges) == 7
         assert all(tier.unlocked_at is None for badge in badges for tier in badge.tiers)
         assert achievement_service.evaluate(seeded_db, bot.user_id, FROZEN_NOW) == []
@@ -554,6 +559,32 @@ class TestSeeding:
         assert (counts["users"], counts["bot_profiles"]) == (36, 35)
         state = seeded_db.get(AppState, 1)
         assert state is not None and (state.clock_offset_seconds, state.seeded_at) == (0, FROZEN_NOW)
+
+    def test_choice_ids_and_positions_do_not_give_the_answer_away(self, seeded_db: Session) -> None:
+        # The files list each exercise's correct choice first; numbering them in that order would
+        # make the lowest option id the answer to every choice exercise.
+        choice_types = (ExerciseType.MULTIPLE_CHOICE, ExerciseType.FILL_BLANK)
+        exercises = seeded_db.scalars(
+            select(Exercise).where(Exercise.type.in_(choice_types)).options(*content_repo.EXERCISE_CHILDREN)
+        ).all()
+        correct = [next(option for option in exercise.options if option.is_correct) for exercise in exercises]
+        lowest_id = sum(option.id == min(o.id for o in option.exercise.options) for option in correct)
+        first_place = sum(option.position == 1 for option in correct)
+        assert len(exercises) == 41
+        assert lowest_id < len(exercises) / 2  # about one in three, as chance gives
+        assert first_place < len(exercises) / 2
+
+    def test_planning_the_history_loads_no_service_but_the_answer_adapters(self) -> None:
+        # The history is planned with the pure rules; it must not pull in the lesson-loop services.
+        probe = (
+            "import sys, app.seed.history;"
+            "print(sorted(m for m in sys.modules if m.startswith('app.services.')))"
+        )
+        backend = Path(__file__).resolve().parents[2]
+        loaded = subprocess.run(
+            [sys.executable, "-c", probe], capture_output=True, text=True, check=True, cwd=backend
+        ).stdout
+        assert loaded.strip() == "['app.services.exercises']"
 
     def test_the_seed_fits_the_boot_budget(self, tmp_path: Path) -> None:
         engine = build_database(tmp_path / "budget.db")

@@ -175,6 +175,18 @@ def test_acknowledging_a_result_is_idempotent(client: TestClient, clock: FrozenC
     assert board(client)["lastWeekResult"]["seen"] is True
 
 
+def test_after_the_newest_result_is_acknowledged_no_older_one_comes_back(
+    client: TestClient, seeded_engine: Engine
+) -> None:
+    play_lesson(client, seeded_engine, node_at(client, 2, 2))
+    next_week(client)  # this week ends before last week's promotion was ever acknowledged
+    pending = get_me(client)["pendingLeagueResult"]
+    assert pending["weekStart"] == "2026-10-05"  # the week that just ended is the one to show
+    client.post(f"{API}/me/league/results/{pending['membershipId']}/ack")
+    assert get_me(client)["pendingLeagueResult"] is None  # the older, stale promotion stays shelved
+    assert board(client)["lastWeekResult"]["weekStart"] == "2026-10-05"
+
+
 def test_only_ones_own_finished_week_can_be_acknowledged(
     client: TestClient, seeded_engine: Engine, learner2: int
 ) -> None:

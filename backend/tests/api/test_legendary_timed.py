@@ -13,7 +13,8 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from app.core.clock import FrozenClock
-from app.domain.enums import GemReason
+from app.domain.enums import ExerciseType, GemReason
+from app.domain.rules import TIMED_BONUS_SECONDS
 from app.models import GemTransaction
 from tests.helpers import (
     API,
@@ -210,6 +211,23 @@ def test_an_answer_within_the_grace_period_still_counts(
     run = start_session(client, {"kind": "timed"})
     clock.advance(seconds=35)  # five seconds past the deadline: the network's allowance
     assert len(answer_items(client, seeded_engine, run, limit=1)) == 1
+
+
+def test_a_right_answer_in_the_grace_period_still_earns_its_bonus(
+    client: TestClient, clock: FrozenClock, seeded_engine: Engine
+) -> None:
+    run = start_session(client, {"kind": "timed"})
+    bonus = TIMED_BONUS_SECONDS[ExerciseType(run["items"][0]["exercise"]["type"])]
+    clock.advance(seconds=30.5)  # the clock reached zero while this answer was on its way
+    (late,) = answer_items(client, seeded_engine, run, limit=1)
+    assert late["isCorrect"] is True
+    assert late["session"]["expiresAt"] == f"2026-10-08T12:00:{30 + bonus}Z"  # the bonus still applies
+    assert late["session"]["canComplete"] is False  # so the run goes on until the new deadline
+    assert_problem(client.post(f"{API}/sessions/{run['id']}/complete"), 409, "SESSION_INCOMPLETE")
+    clock.advance(seconds=bonus)
+    receipt = complete(client, run["id"])
+    assert receipt["timed"] == {"correct": 1, "answered": 1, "timeUp": True}
+    assert receipt["xp"]["total"] == 1
 
 
 def test_an_answer_after_the_grace_period_is_refused(client: TestClient, clock: FrozenClock) -> None:

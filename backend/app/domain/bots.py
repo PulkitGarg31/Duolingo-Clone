@@ -63,7 +63,8 @@ def bot_week_xp_bound(daily_xp: int, tier: int) -> float:
     """A strict upper bound on a bot's weekly XP: the largest possible target plus one session.
 
     The schedule stops at the first session that reaches the target, so it overshoots the rounded
-    target (at most half an XP above the largest unrounded one) by less than one session. The seed
-    relies on this bound to show that the sample learner's last league week was a promotion.
+    target (at most half an XP above the largest unrounded one) by less than one session. The
+    argument that the seeded learner's last league week was a promotion rests on this bound; the
+    seed's property test checks it.
     """
     return 7 * daily_xp * BOT_TIER_PACE[tier] * BOT_WEEK_SPREAD[1] + max(BOT_SESSION_XP)

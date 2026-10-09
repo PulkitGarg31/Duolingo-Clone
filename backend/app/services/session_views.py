@@ -8,11 +8,12 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.domain import session_flow
+from app.domain.content import CourseContent, NodeRow
 from app.domain.enums import SessionKind, SessionStatus
 from app.domain.rng import rng_for
 from app.domain.rules import TIMED_BONUS_SECONDS, TIMED_START_SECONDS
 from app.domain.session_flow import ItemFacts, SessionFacts
-from app.models import LessonSession, PathNode, SessionItem
+from app.models import LessonSession, SessionItem
 from app.schemas.common import HeartsOut
 from app.schemas.sessions import (
     BlockedReason,
@@ -33,7 +34,8 @@ from app.services.exercises import PromptStyle, payload
 class Scene:
     """What a view of one session needs besides the session itself."""
 
-    node: PathNode | None  # with its unit and lessons loaded; None for global and timed practice
+    content: CourseContent  # the course the session is played in: its nodes and exercises
+    node: NodeRow | None  # None for global and timed practice
     style: PromptStyle
     hearts: HeartsOut  # the learner's hearts now
     now: datetime
@@ -96,7 +98,7 @@ def session_out(session: LessonSession, scene: Scene, *, resumed: bool) -> Sessi
         current_item_id=current_item_id(session),
         blocked_reason=blocked_reason(session, scene.hearts.current),
         can_complete=can_complete(session, scene.hearts.current, scene.now),
-        items=[item_out(item, session, scene.style) for item in session.items],
+        items=[item_out(item, session, scene) for item in session.items],
     )
 
 
@@ -114,19 +116,20 @@ def state_out(session: LessonSession, scene: Scene) -> SessionStateOut:
     )
 
 
-def item_out(item: SessionItem, session: LessonSession, style: PromptStyle) -> SessionItemOut:
+def item_out(item: SessionItem, session: LessonSession, scene: Scene) -> SessionItemOut:
     """One attempt in the queue. Its choices are shuffled by (session seed, seq), so every read of
     the session shows the same order."""
+    exercise = scene.content.exercise(item.exercise_id)
     return SessionItemOut(
         id=item.id,
         seq=item.seq,
         origin=item.origin,
         label=session_flow.item_label(
-            session.kind, item.origin, from_mistakes=item.from_mistakes, is_new_word=item.exercise.is_new_word
+            session.kind, item.origin, from_mistakes=item.from_mistakes, is_new_word=exercise.is_new_word
         ),
         result=item.result,
         note=item.note,
-        exercise=payload(item.exercise, style, rng_for(session.rng_seed, item.seq)),
+        exercise=payload(exercise, scene.style, rng_for(session.rng_seed, item.seq)),
     )
 
 
@@ -151,7 +154,7 @@ def can_complete(session: LessonSession, hearts: int, now: datetime) -> bool:
     return session_flow.can_complete(session_facts(session), item_facts(session), hearts, now)
 
 
-def _node_ref(node: PathNode | None) -> SessionNodeRef | None:
+def _node_ref(node: NodeRow | None) -> SessionNodeRef | None:
     if node is None:
         return None
     return SessionNodeRef(
@@ -159,12 +162,12 @@ def _node_ref(node: PathNode | None) -> SessionNodeRef | None:
         kind=node.kind,
         title=node.title,
         unit_id=node.unit_id,
-        unit_number=node.unit.position,
-        unit_color=node.unit.color,
+        unit_number=node.unit_number,
+        unit_color=node.unit_color,
     )
 
 
-def _lesson_ref(session: LessonSession, node: PathNode | None) -> SessionLessonRef | None:
+def _lesson_ref(session: LessonSession, node: NodeRow | None) -> SessionLessonRef | None:
     """Which lesson of its node a lesson session plays ("Lesson 2 of 3")."""
     if session.lesson_id is None or node is None:
         return None

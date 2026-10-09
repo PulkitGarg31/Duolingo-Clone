@@ -2,7 +2,9 @@
 
 Values follow the Duolingo web defaults. Where a constant is marked "DB CHECK", the schema builds
 that constraint from the same name, so the rule and the database cannot drift apart.
-Shop prices and quest rewards are catalogue data, seeded into their tables.
+Shop prices and quest rewards are catalogue data, seeded into their tables. So are each chest's gems
+and the sample learner's opening balance: they live in the seed files (a unit's "chestGems", and
+"startingGems" in sample_learner.json).
 """
 
 from collections.abc import Mapping
@@ -95,7 +97,3 @@ BOT_SESSION_XP: Final[tuple[int, ...]] = (10, 11, 12, 13, 14, 15, 15, 20)  # XP 
 # ---- grading ----
 TYPO_MIN_WORD_LENGTH: Final = 4  # shorter words must be exact: el/la, un/una
 SPECIAL_CHARACTERS_ES: Final[tuple[str, ...]] = ("á", "é", "í", "ó", "ú", "ñ", "ü", "¿", "¡")
-
-# ---- seed defaults ----
-CHEST_GEMS: Final = 20  # gems in each path chest
-STARTING_GEMS: Final = 1300  # the sample learner's opening balance

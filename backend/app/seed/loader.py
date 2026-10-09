@@ -53,6 +53,7 @@ from app.seed.schema import (
     answer_tiles,
 )
 from app.seed.validate import DATA_DIR, LoadedCourse, data_version, load_bundle, read_files
+from app.services import reference
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ def seed_if_empty(db: Session, real_now: datetime, settings: Settings) -> bool:
             )
         return False
     bundle = load_bundle(DATA_DIR, default_username=settings.default_username)
+    reference.forget(db)  # nothing kept for an earlier database at this address may be reused
     insert_catalog(db, bundle.catalog)
     course_ids = insert_content(db, bundle.courses)
     learner_id = insert_users(
@@ -297,10 +299,12 @@ def _exercise_row(exercise: ExerciseSeed, lesson_id: int, position: int, key: st
 
 
 def _option_rows(exercise: ExerciseSeed, exercise_id: int, key: str) -> list[Row]:
-    """Choices, with their pictures, or a translate exercise's word-bank tiles.
+    """Choices, with their pictures, or a translate exercise's word-bank tiles, in a shuffled order.
 
-    Tiles are never hand-listed: they are the primary answer's words plus the distractors, shuffled
-    once with a generator seeded by the exercise key. So the primary answer can always be built.
+    Tiles are never hand-listed: they are the primary answer's words plus the distractors, so the
+    primary answer can always be built. The files list a choice exercise's correct option first.
+    Both are shuffled once with a generator seeded by the exercise key, so the order is the same on
+    every boot and neither an option's position nor its id tells which choice is right.
     """
     match exercise:
         case MultipleChoiceSeed():
@@ -309,10 +313,10 @@ def _option_rows(exercise: ExerciseSeed, exercise_id: int, key: str) -> list[Row
             choices = [(option.text, None, option.correct) for option in exercise.options]
         case TranslateSeed():
             tiles = answer_tiles(exercise.answers[0]) + list(exercise.distractors)
-            rng_for(key).shuffle(tiles)
             choices = [(tile, None, False) for tile in tiles]
         case _:
             return []
+    rng_for(key).shuffle(choices)
     return [
         {
             "exercise_id": exercise_id,

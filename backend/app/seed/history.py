@@ -58,7 +58,6 @@ from app.seed.schema import (
     SampleLearnerFile,
 )
 from app.services import exercises
-from app.services.session_service import canonical_json
 
 ITEM_PACE: Final = timedelta(seconds=9)  # between two answers
 FINISH_DELAY: Final = timedelta(seconds=3)  # from the last answer to the completion
@@ -482,7 +481,7 @@ def _scripted_attempt(key: grading.AnswerKey, *, right: bool) -> _Attempt:
     graded = grading.grade(key, exercises.to_answer(payload))
     if (graded.result == ItemResult.CORRECT) != right:
         raise ValueError(f"the scripted answer {payload!r} was graded {graded.result}")
-    return _Attempt(graded.result, graded.note, canonical_json(payload))
+    return _Attempt(graded.result, graded.note, exercises.canonical_json(payload))
 
 
 def _scripted_answer(key: grading.AnswerKey, *, right: bool) -> AnswerIn:

@@ -7,7 +7,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, and_, case, func, select
 from sqlalchemy.orm import Session
 
 from app.domain.enums import ActivityKind, GemReason, XpReason
@@ -25,7 +25,29 @@ class XpLineFact:
     best_combo: int
 
 
+@dataclass(frozen=True)
+class XpTotals:
+    """A learner's XP in total, on one local day and in one time window (such as a league week)."""
+
+    total: int
+    on_day: int
+    in_window: int
+
+
 # ---- XP ----
+
+
+def xp_totals(db: Session, user_id: int, day: date, start: datetime, end: datetime) -> XpTotals:
+    """Total XP, the XP of local day `day` and the XP earned in [start, end), from one query."""
+    in_window = and_(XpEvent.earned_at >= start, XpEvent.earned_at < end)
+    total, on_day, in_week = db.execute(
+        select(
+            func.coalesce(func.sum(XpEvent.amount), 0),
+            func.coalesce(func.sum(case((XpEvent.local_date == day, XpEvent.amount), else_=0)), 0),
+            func.coalesce(func.sum(case((in_window, XpEvent.amount), else_=0)), 0),
+        ).where(XpEvent.user_id == user_id)
+    ).one()
+    return XpTotals(total, on_day, in_week)
 
 
 def total_xp(db: Session, user_id: int) -> int:
@@ -35,11 +57,6 @@ def total_xp(db: Session, user_id: int) -> int:
 def xp_on(db: Session, user_id: int, day: date) -> int:
     """XP earned on one local day: the daily goal's progress."""
     return _sum_xp(db, XpEvent.user_id == user_id, XpEvent.local_date == day)
-
-
-def xp_between(db: Session, user_id: int, start: datetime, end: datetime) -> int:
-    """XP earned in the half-open window [start, end), such as a league week."""
-    return _sum_xp(db, XpEvent.user_id == user_id, XpEvent.earned_at >= start, XpEvent.earned_at < end)
 
 
 def xp_by_day(db: Session, user_id: int, first: date, last: date) -> dict[date, int]:

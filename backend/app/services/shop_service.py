@@ -19,19 +19,20 @@ from app.core.errors import (
     NotFound,
 )
 from app.domain import xp
+from app.domain.catalog import ShopItemRow
 from app.domain.enums import GemReason, ShopItemKind
 from app.domain.rules import MAX_HEARTS, MAX_STREAK_FREEZES
-from app.models import Purchase, ShopItem, UserStats
-from app.repositories import gamification_repo, ledger_repo
+from app.models import Purchase, UserStats
+from app.repositories import ledger_repo
 from app.schemas.shop import PurchaseEffect, PurchaseOut, ShopItemOut, ShopOut
-from app.services import gems_service, hearts_service
+from app.services import gems_service, hearts_service, reference
 from app.services.context import RequestContext
 
 
 def list_items(db: Session, ctx: RequestContext) -> ShopOut:
     """The catalogue in display order, each item saying whether the learner can buy it now and why not."""
     return ShopOut(
-        gems=ctx.stats.gems, items=[_item_out(item, ctx) for item in gamification_repo.shop_items(db)]
+        gems=ctx.stats.gems, items=[_item_out(item, ctx) for item in reference.catalog(db).shop_items]
     )
 
 
@@ -45,7 +46,7 @@ def purchase(db: Session, ctx: RequestContext, item_code: str, key: str) -> tupl
     earlier = ledger_repo.purchase_by_key(db, ctx.user.id, key)
     if earlier is not None:
         return _replay(db, ctx, earlier, item_code), False
-    item = gamification_repo.shop_item_by_code(db, item_code)
+    item = reference.catalog(db).shop_item(item_code)
     if item is None:
         raise NotFound("There is no shop item with that code.")
     refusal = _refusal(item, ctx.stats)
@@ -90,7 +91,7 @@ def _replay(db: Session, ctx: RequestContext, earlier: Purchase, item_code: str)
     return _purchase_out(db, ctx, earlier, item, replayed=True)
 
 
-def _refusal(item: ShopItem, stats: UserStats) -> AppError | None:
+def _refusal(item: ShopItemRow, stats: UserStats) -> AppError | None:
     """Why the item can't be bought now regardless of price, or None."""
     if not item.is_available:
         return ItemUnavailable()
@@ -101,7 +102,7 @@ def _refusal(item: ShopItem, stats: UserStats) -> AppError | None:
     return None
 
 
-def _apply_effect(ctx: RequestContext, item: ShopItem) -> None:
+def _apply_effect(ctx: RequestContext, item: ShopItemRow) -> None:
     """What the item does: full hearts, one more equipped freeze, or a longer Double XP window."""
     match item.kind:
         case ShopItemKind.HEART_REFILL:
@@ -115,7 +116,7 @@ def _apply_effect(ctx: RequestContext, item: ShopItem) -> None:
     ctx.stats.updated_at = ctx.now
 
 
-def _item_out(item: ShopItem, ctx: RequestContext) -> ShopItemOut:
+def _item_out(item: ShopItemRow, ctx: RequestContext) -> ShopItemOut:
     stats = ctx.stats
     freeze = item.kind == ShopItemKind.STREAK_FREEZE
     reason = _unavailable_reason(item, stats)
@@ -135,7 +136,7 @@ def _item_out(item: ShopItem, ctx: RequestContext) -> ShopItemOut:
     )
 
 
-def _unavailable_reason(item: ShopItem, stats: UserStats) -> str | None:
+def _unavailable_reason(item: ShopItemRow, stats: UserStats) -> str | None:
     """The error code a purchase would get right now, so the UI can explain a disabled button."""
     refusal = _refusal(item, stats)
     if refusal is not None:
@@ -146,7 +147,7 @@ def _unavailable_reason(item: ShopItem, stats: UserStats) -> str | None:
 
 
 def _purchase_out(
-    db: Session, ctx: RequestContext, bought: Purchase, item: ShopItem, *, replayed: bool
+    db: Session, ctx: RequestContext, bought: Purchase, item: ShopItemRow, *, replayed: bool
 ) -> PurchaseOut:
     """The purchase as it was made, with the learner's gems and state as they are now."""
     return PurchaseOut(
@@ -169,8 +170,8 @@ def _boost_until(stats: UserStats, now: datetime) -> datetime | None:
     return stats.xp_boost_until if xp.is_boost_active(stats.xp_boost_until, now) else None
 
 
-def _item_of(db: Session, bought: Purchase) -> ShopItem:
-    item = gamification_repo.get_shop_item(db, bought.shop_item_id)
+def _item_of(db: Session, bought: Purchase) -> ShopItemRow:
+    item = reference.catalog(db).shop_item_by_id(bought.shop_item_id)
     if item is None:  # a purchase's item can't be deleted (ON DELETE RESTRICT)
         raise RuntimeError(f"shop item {bought.shop_item_id} is missing")
     return item

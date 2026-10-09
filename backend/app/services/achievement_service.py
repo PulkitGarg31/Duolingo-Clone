@@ -11,42 +11,55 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.core.errors import NotFound
 from app.domain import achievements, bots, leagues
-from app.domain.achievements import AchievementDef, AchievementTierDef, Unlock
-from app.domain.enums import AchievementCode, AchievementMetric, TextLang
-from app.models import Achievement, BotProfile, LeagueMembership, User, UserAchievement
-from app.repositories import content_repo, gamification_repo, league_repo, ledger_repo, play_repo, user_repo
+from app.domain.achievements import AchievementDef, Unlock
+from app.domain.enums import AchievementMetric
+from app.models import BotProfile, LeagueMembership, User, UserAchievement, UserStats
+from app.repositories import gamification_repo, league_repo, ledger_repo, play_repo, user_repo
 from app.schemas.completion import AchievementUnlockOut
 from app.schemas.profile import AchievementOut, AchievementTierOut
-from app.services import path_service
+from app.services import path_service, reference
+from app.services.path_service import PathSnapshot
 
 Metric = AchievementMetric
 
 
-def metrics_for(db: Session, user_id: int, now: datetime) -> dict[AchievementMetric, int]:
-    """Every achievement statistic of a learner or a bot, as of `now`."""
-    profile = user_repo.get_bot_profile(db, user_id)
-    if profile is not None:
-        return _bot_metrics(db, profile, now)
-    return _learner_metrics(db, user_id)
+def metrics_for(
+    db: Session, user: User, now: datetime, path_now: PathSnapshot | None = None
+) -> dict[AchievementMetric, int]:
+    """Every achievement statistic of a learner or a bot, as of `now`.
+
+    A learner's words learned come from their path: pass `path_now` when it is already at hand.
+    """
+    if user.bot_profile is not None:
+        return _bot_metrics(db, user.bot_profile, now)
+    stats = _stats(db, user.id)
+    return _learner_metrics(db, user, stats, path_now or path_service.snapshot(db, user))
 
 
 def evaluate(
-    db: Session, user_id: int, now: datetime, session_id: int | None = None
+    db: Session,
+    user_id: int,
+    now: datetime,
+    session_id: int | None = None,
+    *,
+    path_now: PathSnapshot | None = None,
 ) -> list[AchievementUnlockOut]:
     """Record every level the learner's statistics reach for the first time.
 
     Each new level gets a `user_achievements` row unlocked at `now`, linked to the completed session
     that reached it when there is one. The result holds the highest new level of each achievement,
-    in catalogue order, because the unlock screen celebrates one level per badge. Bots earn no
-    rows, so for a bot the result is always empty.
+    in catalogue order, because the unlock screen celebrates one level per badge. Bots have no
+    stats and earn no rows, so for a bot the result is always empty. Pass `path_now` when the
+    learner's path is already at hand.
     """
-    if user_repo.is_bot(db, user_id):
+    stats = user_repo.get_stats(db, user_id)
+    if stats is None:  # a bot
         return []
-    catalogue = _catalogue(db)
+    catalogue = reference.catalog(db).achievements
     owned = gamification_repo.unlocked_tiers(db, user_id)
-    unlocks = achievements.newly_reached(catalogue, _learner_metrics(db, user_id), owned)
+    metrics = _learner_metrics(db, stats.user, stats, path_now or path_service.snapshot(db, stats.user))
+    unlocks = achievements.newly_reached(catalogue, metrics, owned)
     db.add_all(
         UserAchievement(
             user_id=user_id, achievement_tier_id=unlock.tier.id, session_id=session_id, unlocked_at=now
@@ -56,47 +69,49 @@ def evaluate(
     return [_unlock_out(unlock) for unlock in achievements.highest_per_achievement(unlocks)]
 
 
-def list_for_profile(db: Session, user_id: int, now: datetime, *, is_bot: bool) -> list[AchievementOut]:
-    """Every achievement in catalogue order, with the level its statistic reaches and the next goal.
-
-    A learner's reached levels carry the date they were first reached; a bot's never do.
-    """
-    metrics = metrics_for(db, user_id, now)
+def list_for_profile(
+    db: Session, user_id: int, metrics: Mapping[AchievementMetric, int], *, is_bot: bool
+) -> list[AchievementOut]:
+    """Every achievement in catalogue order, with the level its statistic (from `metrics_for`) reaches
+    and the next goal. A learner's reached levels carry the date they were first reached; a bot's
+    never do."""
     unlocked = {} if is_bot else gamification_repo.unlocked_tiers(db, user_id)
     return [
-        _achievement_out(achievement, metrics[achievement.metric], unlocked) for achievement in _catalogue(db)
+        _achievement_out(achievement, metrics[achievement.metric], unlocked)
+        for achievement in reference.catalog(db).achievements
     ]
 
 
 # ---- statistics ----
 
 
-def _learner_metrics(db: Session, user_id: int) -> dict[AchievementMetric, int]:
-    """A learner's statistics, all derived from their facts except the stored streak record and tier."""
-    user = user_repo.get(db, user_id)
-    stats = user_repo.get_stats(db, user_id)
-    if user is None or stats is None:
-        raise NotFound("There is no learner with that id.")
-    highest_cohort = league_repo.highest_cohort_tier(db, user_id)
-    leagues_open = leagues.leagues_unlocked(play_repo.count_completed_sessions(db, user_id))
+def _learner_metrics(
+    db: Session, user: User, stats: UserStats, path_now: PathSnapshot
+) -> dict[AchievementMetric, int]:
+    """A learner's statistics, all derived from their facts except the stored streak record and tier.
+
+    Words learned are the glossary words of the course's language that the finished nodes introduce.
+    """
+    highest_cohort = league_repo.highest_cohort_tier(db, user.id)
+    leagues_open = leagues.leagues_unlocked(play_repo.count_completed_sessions(db, user.id))
     return {
         Metric.LONGEST_STREAK: stats.streak_longest,
-        Metric.TOTAL_XP: ledger_repo.total_xp(db, user_id),
-        Metric.WORDS_LEARNED: _words_learned(db, user),
-        Metric.PERFECT_LESSONS: play_repo.count_perfect_lessons(db, user_id),
+        Metric.TOTAL_XP: ledger_repo.total_xp(db, user.id),
+        Metric.WORDS_LEARNED: path_now.content.words_introduced(path_now.finished_node_ids()),
+        Metric.PERFECT_LESSONS: play_repo.count_perfect_lessons(db, user.id),
         Metric.HIGHEST_LEAGUE: achievements.highest_league(
             stats.league_tier, [] if highest_cohort is None else [highest_cohort], leagues_open=leagues_open
         ),
-        Metric.FIRST_PLACE_FINISHES: league_repo.count_finishes(db, user_id, best_rank=1),
-        Metric.DIAMOND_WINS: league_repo.count_finishes(db, user_id, best_rank=1, tier=leagues.HIGHEST_TIER),
+        Metric.FIRST_PLACE_FINISHES: league_repo.count_finishes(db, user.id, best_rank=1),
+        Metric.DIAMOND_WINS: league_repo.count_finishes(db, user.id, best_rank=1, tier=leagues.HIGHEST_TIER),
     }
 
 
-def _words_learned(db: Session, user: User) -> int:
-    """Glossary terms in the course's language that the nodes the learner has finished introduce."""
-    path_now = path_service.snapshot(db, user)
-    language = TextLang(path_now.course.learning_language)
-    return content_repo.count_glossary_terms(db, path_now.course.id, language, path_now.finished_node_ids())
+def _stats(db: Session, user_id: int) -> UserStats:
+    stats = user_repo.get_stats(db, user_id)
+    if stats is None:  # every learner has a stats row; bots are measured separately
+        raise RuntimeError(f"learner {user_id} has no stats row")
+    return stats
 
 
 def _bot_metrics(db: Session, profile: BotProfile, now: datetime) -> dict[AchievementMetric, int]:
@@ -126,26 +141,7 @@ def _bot_week_xp(profile: BotProfile, membership: LeagueMembership, now: datetim
     return xp
 
 
-# ---- catalogue and responses ----
-
-
-def _catalogue(db: Session) -> list[AchievementDef]:
-    """The achievement catalogue in display order, as the domain rules see it."""
-    return [_definition(row) for row in gamification_repo.achievements(db)]
-
-
-def _definition(row: Achievement) -> AchievementDef:
-    """One achievement row and its levels, as a domain definition."""
-    return AchievementDef(
-        code=AchievementCode(row.code),
-        name=row.name,
-        metric=row.metric,
-        description_template=row.description_template,
-        color=row.color,
-        tiers=tuple(
-            AchievementTierDef(tier.id, tier.level, tier.threshold, tier.description) for tier in row.tiers
-        ),
-    )
+# ---- responses ----
 
 
 def _unlock_out(unlock: Unlock) -> AchievementUnlockOut:

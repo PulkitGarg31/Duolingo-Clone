@@ -188,6 +188,8 @@ def test_a_chosen_range_is_returned_whole(client: TestClient) -> None:
         {"from": "2026-10-08", "to": "2026-10-01"},  # backwards
         {"to": "2026-10-09"},  # tomorrow
         {"from": "2026-07-08", "to": "2026-10-08"},  # 93 days
+        {"to": "0001-01-01"},  # the default start, five weeks back, would fall before year 1
+        {"to": "0001-02-03"},  # the last such day
     ],
 )
 def test_an_activity_range_must_end_by_today_and_span_at_most_92_days(

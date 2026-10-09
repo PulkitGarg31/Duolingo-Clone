@@ -25,10 +25,6 @@ class WeeklyXp:
 # ---- tiers and cohorts ----
 
 
-def get_league(db: Session, tier: int) -> League | None:
-    return db.get(League, tier)
-
-
 def leagues(db: Session) -> list[League]:
     """The tier ladder, Bronze first."""
     return list(db.scalars(select(League).order_by(League.tier)))
@@ -57,14 +53,6 @@ def open_cohorts_before(db: Session, week_start: date) -> list[LeagueCohort]:
 # ---- memberships ----
 
 
-def membership(db: Session, cohort_id: int, user_id: int) -> LeagueMembership | None:
-    return db.scalar(
-        select(LeagueMembership).where(
-            LeagueMembership.cohort_id == cohort_id, LeagueMembership.user_id == user_id
-        )
-    )
-
-
 def membership_for_week(db: Session, user_id: int, week_start: date) -> LeagueMembership | None:
     """The learner's membership in the given week, whatever the tier (a learner has at most one)."""
     return db.scalar(
@@ -84,9 +72,9 @@ def get_membership(db: Session, user_id: int, membership_id: int) -> LeagueMembe
     )
 
 
-def latest_result(db: Session, user_id: int, *, unseen_only: bool = False) -> LeagueMembership | None:
-    """The newest finalized membership with its cohort, optionally among those not yet acknowledged."""
-    query = (
+def latest_result(db: Session, user_id: int) -> LeagueMembership | None:
+    """The user's newest finalized membership (last finished week), with its cohort."""
+    return db.scalar(
         select(LeagueMembership)
         .join(LeagueMembership.cohort)
         .where(LeagueMembership.user_id == user_id, LeagueMembership.outcome.is_not(None))
@@ -94,9 +82,6 @@ def latest_result(db: Session, user_id: int, *, unseen_only: bool = False) -> Le
         .limit(1)
         .options(contains_eager(LeagueMembership.cohort))
     )
-    if unseen_only:
-        query = query.where(LeagueMembership.result_seen_at.is_(None))
-    return db.scalar(query)
 
 
 def memberships_with_cohorts(db: Session, user_id: int) -> list[LeagueMembership]:
