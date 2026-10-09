@@ -6,23 +6,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useEffectEvent, type ReactNode } from "react";
 import { useToast } from "@/components/ui/Toast";
 import { getHealth } from "@/lib/api/endpoints";
-import {
-  HEALTH_PROBE_TIMEOUT_MS,
-  ServerReadyContext,
-  bootWatch,
-  startKeepAlive,
-  useWakeGate,
-  wakeGate,
-} from "@/lib/api/serverStatus";
+import { ServerReadyContext, bootWatch, startKeepAlive, useWakeGate, wakeGate } from "@/lib/api/serverStatus";
+import { probeHealth } from "./healthProbe";
 import { WakeScreen } from "./WakeScreen";
 
 const RESTART_MESSAGE = "The demo server restarted, so progress was reset";
-
-/** One /health probe. The body's boot id also feeds restart detection. */
-async function probeHealth(): Promise<void> {
-  const health = await getHealth({ timeoutMs: HEALTH_PROBE_TIMEOUT_MS });
-  bootWatch.observe(health.bootId);
-}
 
 function pingHealth(): Promise<unknown> {
   return getHealth();

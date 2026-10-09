@@ -18,7 +18,14 @@ export function DemoToolsSection({ me }: { me: MeOut }) {
   const tools = useDemoTools(me);
   return (
     <>
-      <TimeTravelPanel clock={clock.data} running={tools.running} busy={tools.busy} onRun={tools.run} onReset={tools.reset} />
+      <TimeTravelPanel
+        clock={clock.data}
+        isDemo={me.user.isDemo}
+        running={tools.running}
+        busy={tools.busy}
+        onRun={tools.run}
+        onReset={tools.reset}
+      />
       <WeekResultModal result={weekResultToShow(me.pendingLeagueResult, tools.finishedWeeks)} />
     </>
   );

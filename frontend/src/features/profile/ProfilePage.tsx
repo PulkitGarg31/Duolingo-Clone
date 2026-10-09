@@ -1,6 +1,7 @@
 "use client";
 
 import { notFound } from "next/navigation";
+import { GuestCard } from "@/features/rail/GuestCard";
 import { isApiError } from "@/lib/api/errors";
 import { useMe, useProfile } from "@/lib/queries/hooks";
 import { LearnerActivity } from "./LearnerActivity";
@@ -17,11 +18,15 @@ export function ProfilePage({ userId }: { userId: number | "me" }) {
 
   if (profile.data && me.data) {
     const { user } = profile.data;
+    const own = user.isMe;
     return (
       <ProfileView
         profile={profile.data}
         course={me.data.course}
-        activity={user.isMe ? <LearnerActivity me={me.data} joinedAt={user.joinedAt} /> : undefined}
+        activity={own ? <LearnerActivity me={me.data} joinedAt={user.joinedAt} /> : undefined}
+        email={own ? me.data.user.email : null}
+        // Wide screens show the guest card in the right rail.
+        notice={own && me.data.user.isDemo ? <GuestCard className="mt-6 xl:hidden" /> : undefined}
       />
     );
   }

@@ -8,6 +8,8 @@ import {
   learnerToast,
   mergeEffects,
   nextDayCallsToSkipADay,
+  resetCopy,
+  resetToast,
   weekResultToShow,
 } from "./demoTools";
 
@@ -164,5 +166,15 @@ describe("weekResultToShow", () => {
 
   it("shows nothing once the result is acknowledged", () => {
     expect(weekResultToShow(null, [31])).toBeNull();
+  });
+});
+
+describe("reset copy", () => {
+  it("names the demo reset for the demo learner and a progress reset for an account", () => {
+    expect(resetCopy(true).button).toBe("Reset demo data");
+    expect(resetCopy(false).button).toBe("Reset my progress");
+    expect(resetCopy(false).description).toContain("Unit 1");
+    expect(resetToast(true)).toBe("Demo data reset to the sample learner.");
+    expect(resetToast(false)).toContain("Your progress was reset");
   });
 });

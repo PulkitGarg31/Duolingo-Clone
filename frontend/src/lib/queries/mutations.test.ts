@@ -5,6 +5,7 @@ import { devNextDay } from "@/lib/api/endpoints";
 import type { ApiError } from "@/lib/api/errors";
 import type {
   AnswerResultOut,
+  AuthOut,
   ChestClaimOut,
   CompletionOut,
   HeartsOut,
@@ -18,16 +19,21 @@ import type {
   SettingsOut,
   SettingsUpdateOut,
 } from "@/lib/api/types";
+import { tokenStore } from "@/lib/auth/tokenStore";
 import { qk } from "./keys";
 import {
   ackLeagueResultMutation,
   claimChestMutation,
   completeSessionMutation,
   devMutation,
+  loginMutation,
+  logoutMutation,
   purchaseMutation,
   quitSessionMutation,
+  signupMutation,
   startSessionMutation,
   submitAnswerMutation,
+  switchLearner,
   updateSettingsMutation,
 } from "./mutations";
 import { createQueryClient } from "./queryClient";
@@ -73,6 +79,8 @@ const me: MeOut = {
     timezone: "Asia/Kolkata",
     timezoneConfirmed: true,
     joinedAt: "2026-09-08T06:30:00Z",
+    email: null,
+    isDemo: true,
   },
   course: {
     id: 1,
@@ -319,6 +327,7 @@ function chestState(client: QueryClient): string | undefined {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  tokenStore.clear();
 });
 
 // ----------------------------------------------------------------------------------------------- the table
@@ -679,5 +688,114 @@ describe("demo tools", () => {
 
     expect(await outcome).toMatchObject({ status: 503 });
     expect(requests).toHaveLength(1);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ accounts
+
+describe("accounts", () => {
+  const auth: AuthOut = {
+    token: "tok-ana",
+    expiresAt: "2026-11-07T12:00:00Z",
+    user: { ...me.user, id: 77, username: "ana", displayName: "Ana", email: "ana@example.com", isDemo: false },
+  };
+  const signupBody = { displayName: "Ana", email: "ana@example.com", password: "s3cret-pass", timezone: "Europe/Madrid" };
+
+  function cachedQueries(client: QueryClient): number {
+    return client.getQueryCache().getAll().length;
+  }
+
+  it("signing up stores the token, empties the previous learner's cache, then opens the path", async () => {
+    const client = seededClient();
+    const requests = serve({ "POST /auth/signup": [() => json(auth, 201)] });
+    const openPath = vi.fn(() => expect(cachedQueries(client)).toBe(0));
+
+    await run(client, signupMutation(client, openPath), signupBody);
+
+    expect(requests[0].body).toEqual(signupBody);
+    expect(requests[0].headers.Authorization).toBeUndefined();
+    expect(tokenStore.get()).toBe("tok-ana");
+    expect(openPath).toHaveBeenCalledTimes(1);
+  });
+
+  it("never retries a signup, which could meet the account its first attempt created", async () => {
+    vi.useFakeTimers();
+    const client = seededClient();
+    const requests = serve({ "POST /auth/signup": [() => gatewayPage(503), () => json(auth, 201)] });
+
+    const outcome = run(client, signupMutation(client, vi.fn()), signupBody).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(await outcome).toMatchObject({ status: 503 });
+    expect(requests).toHaveLength(1);
+    expect(tokenStore.get()).toBeNull();
+  });
+
+  it("logging in replaces the token and the cache", async () => {
+    tokenStore.set("tok-previous");
+    const client = seededClient();
+    serve({ "POST /auth/login": [() => json(auth)] });
+    const openPath = vi.fn();
+
+    await run(client, loginMutation(client, openPath), { email: "ana@example.com", password: "s3cret-pass" });
+
+    expect(tokenStore.get()).toBe("tok-ana");
+    expect(cachedQueries(client)).toBe(0);
+    expect(openPath).toHaveBeenCalledTimes(1);
+  });
+
+  it("a refused login keeps the current learner, their token and their cache", async () => {
+    tokenStore.set("tok-previous");
+    const client = seededClient();
+    serve({ "POST /auth/login": [() => problem(401, "INVALID_CREDENTIALS")] });
+    const openPath = vi.fn();
+
+    const error = await run(client, loginMutation(client, openPath), { email: "ana@example.com", password: "nope" }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toMatchObject({ code: "INVALID_CREDENTIALS" });
+    expect(tokenStore.get()).toBe("tok-previous");
+    expect(cachedMe(client)).toEqual(me);
+    expect(openPath).not.toHaveBeenCalled();
+  });
+
+  it("logging out revokes the session, then forgets the token and the cache and leaves", async () => {
+    tokenStore.set("tok-ana");
+    const client = seededClient();
+    const requests = serve({ "POST /auth/logout": [() => json({ loggedOut: true })] });
+    const leave = vi.fn();
+
+    await run(client, logoutMutation(client, leave), undefined);
+
+    expect(requests.map((request) => [request.route, request.headers.Authorization])).toEqual([
+      ["POST /auth/logout", "Bearer tok-ana"],
+    ]);
+    expect(tokenStore.get()).toBeNull();
+    expect(cachedQueries(client)).toBe(0);
+    expect(leave).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs out locally at once when the server cannot be reached, without retrying or waiting for it", async () => {
+    tokenStore.set("tok-ana");
+    const client = seededClient();
+    const requests = serve({ "POST /auth/logout": [() => gatewayPage(503)] });
+    const leave = vi.fn();
+
+    await expect(run(client, logoutMutation(client, leave), undefined)).resolves.toBeNull();
+
+    expect(requests).toHaveLength(1);
+    expect(tokenStore.get()).toBeNull();
+    expect(leave).toHaveBeenCalledTimes(1);
+  });
+
+  it("switching to the demo learner drops the token and every cached screen", () => {
+    tokenStore.set("tok-ana");
+    const client = seededClient();
+
+    switchLearner(client, null);
+
+    expect(tokenStore.get()).toBeNull();
+    expect(cachedQueries(client)).toBe(0);
   });
 });

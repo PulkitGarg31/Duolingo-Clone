@@ -1,5 +1,6 @@
 import type { Ref } from "react";
 import { FriendsCard } from "@/features/rail/FriendsCard";
+import { GuestCard } from "@/features/rail/GuestCard";
 import { LeagueCard } from "@/features/rail/LeagueCard";
 import { QuestsCard } from "@/features/rail/QuestsCard";
 import { RailCardSkeleton } from "@/features/rail/RailCardSkeleton";
@@ -21,11 +22,11 @@ interface RightRailProps {
 }
 
 /**
- * The right column of wide screens: the stats row, then the page's own stack of cards, then the footer. It
- * sticks to the top and scrolls on its own when taller than the window.
+ * The right column of wide screens: the stats row, then the page's own stack of cards (with the guest card for
+ * the demo learner), then the footer. It sticks to the top and scrolls on its own when taller than the window.
  */
 export function RightRail({ pathname, me, quests, slotRef, className }: RightRailProps) {
-  const { width, blocks } = railLayoutFor(pathname);
+  const { width, blocks } = railLayoutFor(pathname, { guest: me?.user.isDemo });
   return (
     <aside
       className={cn(
@@ -60,6 +61,8 @@ function RailBlockView({ block, me, quests, slotRef }: RailBlockViewProps) {
       return <SuperPromoCard />;
     case "friends":
       return <FriendsCard />;
+    case "guest":
+      return <GuestCard />;
     case "settingsNav":
       return <div ref={slotRef} />;
     case "footer":

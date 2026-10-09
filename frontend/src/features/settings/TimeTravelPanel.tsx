@@ -4,12 +4,14 @@ import { useState, useSyncExternalStore } from "react";
 import { Button, Divider, Modal, Pill, Skeleton } from "@/components/ui";
 import type { ClockOut } from "@/lib/api/types";
 import { serverNow } from "@/lib/time/serverClock";
-import { DEMO_BUTTONS, formatOffset, formatSimulatedTime, type DemoAction, type DemoTask } from "./demoTools";
+import { DEMO_BUTTONS, formatOffset, formatSimulatedTime, resetCopy, type DemoAction, type DemoTask } from "./demoTools";
 import { SETTINGS_TARGETS } from "./useSettingsSections";
 
 interface TimeTravelPanelProps {
   /** The simulated clock; undefined while it loads. */
   clock: ClockOut | undefined;
+  /** The shared demo learner (RESET DEMO DATA) rather than an account (RESET MY PROGRESS). */
+  isDemo: boolean;
   running: DemoTask | null;
   /** Holds every button while a task runs or the learner's numbers refresh after one. */
   busy: boolean;
@@ -19,11 +21,13 @@ interface TimeTravelPanelProps {
 
 /**
  * The Demo tools card: the simulated clock and the buttons that move it forward or change hearts and gems,
- * so streaks, heart regeneration and league weeks can be tried in minutes. Time only moves forward; RESET
- * DEMO DATA is the one way back, behind a confirmation.
+ * so streaks, heart regeneration and league weeks can be tried in minutes. Every account has its own clock,
+ * so the tools touch only the learner using them. Time only moves forward; the reset (RESET DEMO DATA, or
+ * RESET MY PROGRESS on an account) is the one way back, behind a confirmation.
  */
-export function TimeTravelPanel({ clock, running, busy, onRun, onReset }: TimeTravelPanelProps) {
+export function TimeTravelPanel({ clock, isDemo, running, busy, onRun, onReset }: TimeTravelPanelProps) {
   const [confirming, setConfirming] = useState(false);
+  const reset = resetCopy(isDemo);
   return (
     <section
       id={SETTINGS_TARGETS.demoTools}
@@ -36,7 +40,9 @@ export function TimeTravelPanel({ clock, running, busy, onRun, onReset }: TimeTr
         </h2>
         <Pill tone="beetle">Dev</Pill>
       </div>
-      <p className="mt-1 text-body text-fg-2">Simulate time to test streaks, hearts and leagues.</p>
+      <p className="mt-1 text-body text-fg-2">
+        Simulate time to test streaks, hearts and leagues. Changes affect only your account.
+      </p>
       {clock ? <ClockReadout clock={clock} /> : <Skeleton className="mt-5 h-[84px] w-64 max-w-full rounded-md" />}
       <div className="mt-5 grid gap-2 sm:grid-cols-2">
         {DEMO_BUTTONS.map(({ action, label }) => (
@@ -59,14 +65,14 @@ export function TimeTravelPanel({ clock, running, busy, onRun, onReset }: TimeTr
         disabled={busy && running !== "reset"}
         onClick={() => setConfirming(true)}
       >
-        Reset demo data
+        {reset.button}
       </Button>
       <Modal
         open={confirming}
         onOpenChange={setConfirming}
         layout="dialog"
-        title="Reset all progress?"
-        description="This restores the sample learner to its seeded state."
+        title={reset.title}
+        description={reset.description}
         actions={
           <>
             <Button

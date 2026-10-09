@@ -41,7 +41,7 @@ export function IconRail({ pathname, user, className }: IconRailProps) {
           </li>
         ))}
         <li>
-          <MoreMenu layout="rail" />
+          <MoreMenu layout="rail" user={user} />
         </li>
       </ul>
     </nav>

@@ -2,8 +2,11 @@
 
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
+import { tokenStore } from "@/lib/auth/tokenStore";
+import { SIGNED_OUT_HOME } from "@/lib/queries/mutations";
 import { createQueryClient, onUnhandledActionError, pauseWhileServerAsleep } from "@/lib/queries/queryClient";
 import { ThemeProvider, useTheme } from "@/lib/theme/ThemeProvider";
 
@@ -22,6 +25,7 @@ export function Providers({ children }: { children: ReactNode }) {
         <MotionPreferences>
           <ToastProvider>
             <ActionErrorToasts />
+            <SessionExpiryRedirect />
             {children}
           </ToastProvider>
         </MotionPreferences>
@@ -43,6 +47,27 @@ function ActionErrorToasts() {
   useEffect(
     () => onUnhandledActionError(queryClient, ({ message, requestId }) => toast({ tone: "error", message, requestId })),
     [queryClient, toast],
+  );
+  return null;
+}
+
+/**
+ * The server refused the session token (expired, revoked, or the server restarted and lost every account).
+ * apiFetch has dropped it already; the cached screens belong to that account, so they go too, and the visitor
+ * lands on the welcome page to sign in again or carry on with the demo.
+ */
+function SessionExpiryRedirect() {
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  const { toast } = useToast();
+  useEffect(
+    () =>
+      tokenStore.onExpire(() => {
+        queryClient.clear();
+        toast({ tone: "info", message: "You were signed out" });
+        router.replace(SIGNED_OUT_HOME);
+      }),
+    [queryClient, router, toast],
   );
   return null;
 }

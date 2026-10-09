@@ -34,6 +34,8 @@ export const me: MeOut = {
     timezone: "Asia/Kolkata",
     timezoneConfirmed: true,
     joinedAt: "2026-09-08T06:30:00Z",
+    email: null,
+    isDemo: true,
   },
   course: {
     id: 1,

@@ -10,10 +10,12 @@ import { ComingSoonProvider, useComingSoon } from "@/features/shell/ComingSoon";
 import { Wordmark } from "@/features/shell/Wordmark";
 import { cn } from "@/lib/cn";
 import { DISCLAIMER } from "@/lib/constants";
+import { useEnterDemo } from "@/lib/queries/mutations";
 
 /*
- * The public landing page (MORE → ABOUT THIS CLONE, and the 404 page). It is static: nothing here calls the
- * API, so it renders even while the server sleeps. Every CTA goes to the path.
+ * The public landing page (MORE → ABOUT THIS CLONE, the 404 page, and where signing out lands). It is static:
+ * nothing here waits for the API, so it renders even while the server sleeps. GET STARTED signs up, I ALREADY
+ * HAVE AN ACCOUNT logs in, and TRY THE DEMO opens the path as the shared demo learner.
  */
 
 const COURSES = [
@@ -92,15 +94,32 @@ function Hero() {
       <div className="flex w-full max-w-[424px] flex-col items-center text-center">
         <h1 className="text-[24px]/8 font-extrabold text-fg md:text-hero">The fun, free way to learn Spanish!</h1>
         <div className="mt-8 flex w-full max-w-[330px] flex-col gap-3">
-          <ButtonLink href="/learn" fullWidth>
+          <ButtonLink href="/signup" fullWidth>
             Get started
           </ButtonLink>
-          <ButtonLink href="/learn" variant="outline" fullWidth>
+          <ButtonLink href="/login" variant="outline" fullWidth>
             I already have an account
           </ButtonLink>
         </div>
+        <DemoPath />
       </div>
     </section>
+  );
+}
+
+/**
+ * The instant way in: no account, straight to the lessons as the shared demo learner. A signed-in visitor who
+ * picks it is signed out first.
+ */
+function DemoPath() {
+  const enterDemo = useEnterDemo();
+  return (
+    <div className="mt-5 flex w-full max-w-[330px] flex-col items-center gap-1">
+      <ButtonLink href="/learn" variant="ghost" fullWidth onClick={enterDemo}>
+        Try the demo
+      </ButtonLink>
+      <p className="text-small text-fg-3">No account needed, start right away.</p>
+    </div>
   );
 }
 
@@ -311,7 +330,7 @@ function FinalBand() {
   return (
     <section style={BRAND_BAND} className="bg-(--unit-green) px-6 py-20 text-center">
       <h2 className={cn(HEADLINE, "text-on-color-fixed")}>learn on your schedule.</h2>
-      <ButtonLink href="/learn" variant="white" className="mt-8 w-full max-w-[330px]">
+      <ButtonLink href="/signup" variant="white" className="mt-8 w-full max-w-[330px]">
         Get started
       </ButtonLink>
     </section>

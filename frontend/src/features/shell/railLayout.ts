@@ -1,7 +1,7 @@
 import { matchesRoute } from "./routes";
 
 /** One block of the right rail, top to bottom. */
-export type RailBlock = "stats" | "league" | "quests" | "super" | "friends" | "settingsNav" | "footer";
+export type RailBlock = "stats" | "league" | "quests" | "super" | "friends" | "guest" | "settingsNav" | "footer";
 
 export interface RailLayout {
   /** The rail is 368 px wide, 380 px on settings. */
@@ -22,9 +22,14 @@ const PAGE_CARDS: ReadonlyArray<readonly [route: string, cards: readonly RailBlo
 
 const DEFAULT_CARDS: readonly RailBlock[] = ["quests"];
 
+export interface RailOptions {
+  /** The shared demo learner: the guest card ("Create a profile…") closes the page's stack. */
+  guest?: boolean;
+}
+
 /** The right rail's blocks for a page. Settings swaps the stats and cards for its own section menu. */
-export function railLayoutFor(pathname: string): RailLayout {
+export function railLayoutFor(pathname: string, { guest = false }: RailOptions = {}): RailLayout {
   if (matchesRoute(pathname, "/settings")) return { width: 380, blocks: ["settingsNav", "footer"] };
   const cards = PAGE_CARDS.find(([route]) => matchesRoute(pathname, route))?.[1] ?? DEFAULT_CARDS;
-  return { width: 368, blocks: ["stats", ...cards, "footer"] };
+  return { width: 368, blocks: ["stats", ...cards, ...(guest ? (["guest"] as const) : []), "footer"] };
 }

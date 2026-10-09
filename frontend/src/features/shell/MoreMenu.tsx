@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useId, type ReactNode } from "react";
 import { MoreIcon } from "@/components/icons";
 import { Divider, Popover, PopoverContent, PopoverTrigger, Switch } from "@/components/ui";
+import type { MeUser } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
-import { useUpdateSettings } from "@/lib/queries/mutations";
+import { useLogout, useUpdateSettings } from "@/lib/queries/mutations";
 import { useTheme } from "@/lib/theme/ThemeProvider";
 import { useComingSoon } from "./ComingSoon";
 import { navItemClassName, navLabelClassName } from "./navItemStyles";
@@ -18,8 +19,17 @@ import { useHoverPopover } from "./useHoverPopover";
  */
 const MENU_OFFSET = 16 + 12;
 
-/** The last menu item, MORE: settings, the dark mode switch, help, about, and a disabled log out. */
-export function MoreMenu({ layout }: { layout: "sidebar" | "rail" }) {
+interface MoreMenuProps {
+  layout: "sidebar" | "rail";
+  /** Undefined while `me` loads: the account part of the menu waits for it. */
+  user: MeUser | undefined;
+}
+
+/**
+ * The last menu item, MORE: settings, the dark mode switch, help, about, and the account: LOG OUT when signed
+ * in, a "Demo account" note with SIGN IN on the shared demo learner.
+ */
+export function MoreMenu({ layout, user }: MoreMenuProps) {
   const popover = useHoverPopover();
   return (
     <Popover open={popover.open} onOpenChange={popover.setOpen}>
@@ -43,13 +53,13 @@ export function MoreMenu({ layout }: { layout: "sidebar" | "rail" }) {
         className="min-w-[240px] py-2"
         {...popover.contentProps}
       >
-        <MoreMenuContent onClose={() => popover.setOpen(false)} />
+        <MoreMenuContent user={user} onClose={() => popover.setOpen(false)} />
       </PopoverContent>
     </Popover>
   );
 }
 
-function MoreMenuContent({ onClose }: { onClose: () => void }) {
+function MoreMenuContent({ user, onClose }: { user: MeUser | undefined; onClose: () => void }) {
   const showComingSoon = useComingSoon();
   return (
     <nav aria-label="More">
@@ -81,14 +91,52 @@ function MoreMenuContent({ onClose }: { onClose: () => void }) {
           </MenuEntry>
         </li>
       </ul>
-      <Divider className="my-2" />
-      <div className="px-5 py-2">
-        <button type="button" disabled className="text-[15px] leading-4 font-extrabold tracking-[0.8px] text-fg-2 uppercase opacity-60">
-          Log out
-        </button>
-        <p className="mt-1 text-[13px] leading-4 font-semibold text-fg-3">Sign-in is simplified in this demo</p>
-      </div>
+      {user && (
+        <>
+          <Divider className="my-2" />
+          {user.isDemo ? <DemoAccountEntries onClose={onClose} /> : <LogOutEntry email={user.email} />}
+        </>
+      )}
     </nav>
+  );
+}
+
+/** The shared demo learner: a short note on what that means, and the ways to an account of one's own. */
+function DemoAccountEntries({ onClose }: { onClose: () => void }) {
+  return (
+    <>
+      <div className="px-5 pt-2 pb-1">
+        <p className="text-caption text-fg-3 uppercase">Demo account</p>
+        <p className="mt-1 max-w-[220px] text-[13px] leading-4 font-semibold text-fg-3">
+          Everyone trying the demo shares this progress.
+        </p>
+      </div>
+      <ul>
+        <li>
+          <MenuEntry href="/signup" onSelect={onClose}>
+            Create a profile
+          </MenuEntry>
+        </li>
+        <li>
+          <MenuEntry href="/login" onSelect={onClose}>
+            Sign in
+          </MenuEntry>
+        </li>
+      </ul>
+    </>
+  );
+}
+
+/** LOG OUT, with the account's email under it. The menu stays open on its loading state until it lands. */
+function LogOutEntry({ email }: { email: string | null }) {
+  const logout = useLogout();
+  return (
+    <div>
+      <MenuEntry onSelect={() => logout.mutate()} busy={logout.isPending}>
+        Log out
+      </MenuEntry>
+      {email && <p className="-mt-2 truncate px-5 pb-2 text-[13px] leading-4 font-semibold text-fg-3">{email}</p>}
+    </div>
   );
 }
 
@@ -96,8 +144,16 @@ const ENTRY_CLASSES =
   "flex h-[52px] w-full cursor-pointer items-center pr-10 pl-5 text-left text-[15px] leading-4 font-extrabold " +
   "tracking-[0.8px] text-fg-2 uppercase hover:bg-subtle focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus";
 
+interface MenuEntryProps {
+  href?: string;
+  onSelect: () => void;
+  /** A button whose action is under way: dimmed and ignoring clicks. */
+  busy?: boolean;
+  children: ReactNode;
+}
+
 /** A menu row: a link when it has an `href`, otherwise a button. */
-function MenuEntry({ href, onSelect, children }: { href?: string; onSelect: () => void; children: ReactNode }) {
+function MenuEntry({ href, onSelect, busy = false, children }: MenuEntryProps) {
   if (href) {
     return (
       <Link href={href} onClick={onSelect} className={ENTRY_CLASSES}>
@@ -106,7 +162,13 @@ function MenuEntry({ href, onSelect, children }: { href?: string; onSelect: () =
     );
   }
   return (
-    <button type="button" onClick={onSelect} className={ENTRY_CLASSES}>
+    <button
+      type="button"
+      onClick={busy ? undefined : onSelect}
+      aria-busy={busy || undefined}
+      aria-disabled={busy || undefined}
+      className={cn(ENTRY_CLASSES, busy && "cursor-default opacity-60")}
+    >
       {children}
     </button>
   );

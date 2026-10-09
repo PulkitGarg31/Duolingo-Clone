@@ -21,6 +21,7 @@ import {
   learnerToast,
   mergeEffects,
   nextDayCallsToSkipADay,
+  resetToast,
   type ClockAction,
   type DemoAction,
   type DemoTask,
@@ -109,7 +110,7 @@ export function useDemoTools(me: MeOut) {
     reset: () =>
       track("reset", async () => {
         await resetDemo.mutateAsync();
-        toast({ tone: "success", message: "Demo data reset to the sample learner." });
+        toast({ tone: "success", message: resetToast(me.user.isDemo) });
       }),
   };
 }

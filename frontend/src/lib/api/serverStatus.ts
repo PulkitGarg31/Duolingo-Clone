@@ -145,7 +145,8 @@ export function useWakeGate(): WakeState {
 
 /**
  * True inside `ServerWakeGate` once the server answers. Every query hook is disabled while it is false, which
- * is always the case outside the gate (the landing page, the kitchen sink, the 404 page).
+ * is always the case outside the gate (the landing page, the log-in and sign-up pages, the kitchen sink, the
+ * 404 page).
  */
 export const ServerReadyContext = createContext(false);
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { FriendsCard } from "@/features/rail/FriendsCard";
+import { GuestCard } from "@/features/rail/GuestCard";
 import { LeagueCard } from "@/features/rail/LeagueCard";
 import { QuestsCard } from "@/features/rail/QuestsCard";
 import { RailCardSkeleton } from "@/features/rail/RailCardSkeleton";
@@ -51,6 +52,9 @@ export function RailGallery() {
         </Example>
         <Example label="Friends (profile rail)" className="w-[368px]">
           <FriendsCard />
+        </Example>
+        <Example label="Guest (demo learner)" className="w-[368px]">
+          <GuestCard />
         </Example>
         <Example label="Loading" className="w-[368px]">
           <RailCardSkeleton />

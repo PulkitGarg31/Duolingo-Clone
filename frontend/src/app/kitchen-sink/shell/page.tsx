@@ -15,7 +15,7 @@ function pick<T extends string>(value: string | undefined, options: Record<T, un
 /**
  * The app frame with fixture data. Query parameters pick the state:
  * `page` (learn, leaderboard, quests, shop, profile, practice, guidebook/2, settings), `me` (seeded, extended,
- * outOfHearts, newcomer, notJoined), `path` (seeded, two, done), `quests=done`, `loading=1`, `result=1` (league
+ * outOfHearts, newcomer, notJoined, account), `path` (seeded, two, done), `quests=done`, `loading=1`, `result=1` (league
  * result modal) and `controls=1` (a button that plays the next lesson's result on the path).
  */
 export default async function ShellKitchenSinkPage({ searchParams }: { searchParams: Promise<SearchParams> }) {

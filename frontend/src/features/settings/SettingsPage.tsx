@@ -45,7 +45,7 @@ export function SettingsPage() {
   return (
     <SettingsView
       saved={settings.data}
-      displayName={me.data.user.displayName}
+      user={me.data.user}
       saving={update.isPending}
       onSave={save}
       demoTools={me.data.dev?.enabled ? <DemoToolsSection me={me.data} /> : undefined}

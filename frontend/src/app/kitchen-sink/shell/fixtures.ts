@@ -29,6 +29,8 @@ export const ME: MeOut = {
     timezone: "Asia/Kolkata",
     timezoneConfirmed: true,
     joinedAt: "2026-09-08T06:30:00Z",
+    email: null,
+    isDemo: true,
   },
   course: {
     id: 1,
@@ -129,6 +131,11 @@ export const ME_VARIANTS = {
   notJoined: {
     ...ME,
     league: { ...ME.league, joinedThisWeek: false, rank: null, zone: null, weeklyXp: 0, xpToPassNext: null },
+  },
+  /** A signed-in account rather than the shared demo learner: no guest card, LOG OUT in the MORE menu. */
+  account: {
+    ...ME,
+    user: { ...ME.user, id: 77, username: "ana", displayName: "Ana", email: "ana@example.com", isDemo: false },
   },
 } satisfies Record<string, MeOut>;
 

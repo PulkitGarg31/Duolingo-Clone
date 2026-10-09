@@ -34,7 +34,7 @@ export function Sidebar({ pathname, user, className }: SidebarProps) {
           </li>
         ))}
         <li>
-          <MoreMenu layout="sidebar" />
+          <MoreMenu layout="sidebar" user={user} />
         </li>
       </ul>
     </nav>

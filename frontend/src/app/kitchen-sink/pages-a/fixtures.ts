@@ -60,6 +60,8 @@ function meFixture({ heartsLeft = 4, gems = 820, earnedXp = 12 } = {}): MeOut {
       timezone: "Asia/Kolkata",
       timezoneConfirmed: true,
       joinedAt: "2026-09-08T06:30:00Z",
+      email: null,
+      isDemo: true,
     },
     course: COURSE,
     serverNow: fromNow(0),

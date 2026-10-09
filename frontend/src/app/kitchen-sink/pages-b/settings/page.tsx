@@ -46,11 +46,18 @@ export default function SettingsPreview() {
         <div className="min-w-0 flex-1">
           <SettingsView
             saved={saved}
-            displayName={me.user.displayName}
+            user={me.user}
             saving={saving}
             onSave={save}
             demoTools={
-              <TimeTravelPanel clock={clock} running={running} busy={running !== null} onRun={pretend} onReset={() => pretend("reset")} />
+              <TimeTravelPanel
+                clock={clock}
+                isDemo={me.user.isDemo}
+                running={running}
+                busy={running !== null}
+                onRun={pretend}
+                onReset={() => pretend("reset")}
+              />
             }
           />
         </div>

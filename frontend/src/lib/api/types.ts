@@ -54,6 +54,8 @@ export interface HealthOut { status: "ok"; seeded: boolean; bootId: string; boot
 export interface MeUser {
   id: number; username: string; displayName: string; avatarColor: string;
   timezone: string; timezoneConfirmed: boolean; joinedAt: ISODateTime;
+  email: string | null;                                    // null for the demo learner
+  isDemo: boolean;                                         // the shared demo learner (no token sent)
 }
 export interface MeXp { total: number; today: number; thisWeek: number; }
 export interface MeStreak {
@@ -272,6 +274,17 @@ export interface ClockChangeOut { clock: ClockOut; effects: SyncEffectsOut; }
 export interface DevLearnerPatchIn { hearts?: number; gems?: number; }               // hearts 0..5, gems ≥ 0
 export interface DevResetOut { reset: true; seededAt: ISODateTime; me: MeOut; }
 
+// ---------------- auth ----------------
+export interface SignupIn {                                // POST /auth/signup
+  displayName: string;                                     // 1–40 characters
+  email: string;
+  password: string;                                        // 8–128 characters
+  timezone?: string;                                       // IANA zone; the seed zone when omitted
+}
+export interface LoginIn { email: string; password: string; }   // POST /auth/login
+export interface AuthOut { token: string; expiresAt: ISODateTime; user: MeUser; }
+export interface LogoutOut { loggedOut: true; }
+
 // ---------------- errors (RFC 9457) ----------------
 export type ErrorCode =
   | "VALIDATION_ERROR" | "INVALID_ANSWER" | "IDEMPOTENCY_KEY_REUSED" | "IDEMPOTENCY_KEY_REQUIRED"
@@ -279,7 +292,8 @@ export type ErrorCode =
   | "NODE_LOCKED" | "NODE_NOT_PLAYABLE" | "NODE_ALREADY_COMPLETED" | "ALREADY_LEGENDARY" | "NOTHING_TO_PRACTICE"
   | "CHEST_LOCKED" | "OUT_OF_HEARTS" | "INSUFFICIENT_GEMS" | "HEARTS_ALREADY_FULL" | "MAX_FREEZES_EQUIPPED"
   | "ITEM_UNAVAILABLE" | "SESSION_NOT_ACTIVE" | "SESSION_EXPIRED" | "SESSION_INCOMPLETE"
-  | "ITEM_OUT_OF_ORDER" | "ITEM_ALREADY_ANSWERED" | "LEAGUE_RESULT_NOT_READY" | "INTERNAL_ERROR";
+  | "ITEM_OUT_OF_ORDER" | "ITEM_ALREADY_ANSWERED" | "LEAGUE_RESULT_NOT_READY" | "INTERNAL_ERROR"
+  | "UNAUTHENTICATED" | "INVALID_CREDENTIALS" | "EMAIL_TAKEN";
 export interface FieldError { field: string; message: string; kind: string; }
 export interface ProblemDetails {
   type: string; title: string; status: number; detail: string; instance: string;

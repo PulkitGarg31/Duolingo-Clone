@@ -6,6 +6,7 @@ import {
   type UseMutationResult,
 } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { useCallback } from "react";
 import {
   ackLeagueResult,
   advanceDevClock,
@@ -14,9 +15,12 @@ import {
   createPurchase,
   devNextDay,
   devNextWeek,
+  login,
+  logout,
   patchDevLearner,
   quitSession,
   resetDemo,
+  signup,
   startSession,
   submitAnswer,
   updateSettings,
@@ -25,6 +29,7 @@ import type { ApiError } from "@/lib/api/errors";
 import type {
   AnswerIn,
   AnswerResultOut,
+  AuthOut,
   ChestClaimOut,
   ClockAdvanceIn,
   ClockChangeOut,
@@ -33,6 +38,8 @@ import type {
   DevResetOut,
   LeagueAckOut,
   LeagueOut,
+  LoginIn,
+  LogoutOut,
   MeOut,
   PathNodeOut,
   PathOut,
@@ -43,8 +50,10 @@ import type {
   SettingsPatchIn,
   SettingsUpdateOut,
   ShopItemCode,
+  SignupIn,
   StartSessionIn,
 } from "@/lib/api/types";
+import { tokenStore } from "@/lib/auth/tokenStore";
 import { serverNow } from "@/lib/time/serverClock";
 import { qk } from "./keys";
 
@@ -65,6 +74,103 @@ function patchMe(queryClient: QueryClient, change: (me: MeOut) => MeOut): void {
 /** Refetches `/me` alone, not every "/me/…" query below it. */
 function invalidateMe(queryClient: QueryClient): Promise<void> {
   return queryClient.invalidateQueries({ queryKey: qk.me, exact: true });
+}
+
+// ------------------------------------------------------------------------------------------------ accounts
+
+/** Where a learner lands after signing in or up, and after signing out. */
+export const SIGNED_IN_HOME = "/learn";
+export const SIGNED_OUT_HOME = "/welcome";
+
+/**
+ * Hands the app to another learner: stores the new session token (null for the demo learner) and empties the
+ * cache, since every cached screen belongs to the previous learner. Pages loaded next fetch afresh.
+ */
+export function switchLearner(queryClient: QueryClient, token: string | null): void {
+  if (token === null) tokenStore.clear();
+  else tokenStore.set(token);
+  queryClient.clear();
+}
+
+export function signupMutation(queryClient: QueryClient, onSignedIn: () => void): MutationConfig<AuthOut, SignupIn> {
+  return {
+    mutationFn: signup,
+    // Never retried: a retry after a lost answer could meet the account its first attempt created (EMAIL_TAKEN).
+    // A sleeping server still holds the request until it wakes; holding is not retrying.
+    retry: 0,
+    onSuccess: (auth) => {
+      switchLearner(queryClient, auth.token);
+      onSignedIn();
+    },
+  };
+}
+
+/**
+ * Creates an account, signs it in and opens the path: `signup.mutate({ displayName, email, password, timezone })`.
+ * Errors to handle: EMAIL_TAKEN, VALIDATION_ERROR (field errors in `error.errors`).
+ */
+export function useSignup(): UseMutationResult<AuthOut, ApiError, SignupIn> {
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  return useMutation(signupMutation(queryClient, () => router.replace(SIGNED_IN_HOME)));
+}
+
+export function loginMutation(queryClient: QueryClient, onSignedIn: () => void): MutationConfig<AuthOut, LoginIn> {
+  return {
+    mutationFn: login,
+    onSuccess: (auth) => {
+      switchLearner(queryClient, auth.token);
+      onSignedIn();
+    },
+  };
+}
+
+/** Signs in and opens the path: `login.mutate({ email, password })`. Errors to handle: INVALID_CREDENTIALS. */
+export function useLogin(): UseMutationResult<AuthOut, ApiError, LoginIn> {
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  return useMutation(loginMutation(queryClient, () => router.replace(SIGNED_IN_HOME)));
+}
+
+/** Asks the server to revoke the current session. A server that is down or asleep is not an error here. */
+function revokeSession(): Promise<LogoutOut | null> {
+  const token = tokenStore.get();
+  return token ? logout(token).catch(() => null) : Promise.resolve(null);
+}
+
+export function logoutMutation(queryClient: QueryClient, onSignedOut: () => void): MutationConfig<LogoutOut | null, void> {
+  return {
+    // The server revokes the session when it can be reached; this tab forgets the token either way, so a
+    // server that is down or asleep never keeps anyone signed in (and there is nothing to toast).
+    mutationFn: revokeSession,
+    networkMode: "always",
+    retry: 0,
+    onSettled: () => {
+      switchLearner(queryClient, null);
+      onSignedOut();
+    },
+  };
+}
+
+/** Signs out (`logout.mutate()`) and goes to the landing page. The tab returns to the demo learner. */
+export function useLogout(): UseMutationResult<LogoutOut | null, ApiError, void> {
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  return useMutation(logoutMutation(queryClient, () => router.replace(SIGNED_OUT_HOME)));
+}
+
+/**
+ * "Try the demo": returns the click handler for a link to the path. A signed-in visitor is signed out on the
+ * spot (the server is told in the background) and the tab returns to the shared demo learner; a visitor who is
+ * not signed in just follows the link.
+ */
+export function useEnterDemo(): () => void {
+  const queryClient = useQueryClient();
+  return useCallback(() => {
+    if (tokenStore.get() === null) return;
+    void revokeSession();
+    switchLearner(queryClient, null);
+  }, [queryClient]);
 }
 
 // ------------------------------------------------------------------------------------------------ sessions
@@ -373,8 +479,9 @@ export function useUpdateSettings(): UseMutationResult<SettingsUpdateOut, ApiErr
 // ------------------------------------------------------------------------------------------------ demo tools
 
 /**
- * Demo tools change shared, non-idempotent state, so they are never retried (a retried "+5 HOURS" would jump
- * ten hours). Time travel and resets can change any number on any screen, so everything is refetched.
+ * Demo tools change the caller's state in ways that are not idempotent, so they are never retried (a retried
+ * "+5 HOURS" would jump ten hours). Time travel and resets can change any number on any screen, so everything
+ * is refetched.
  */
 export function devMutation<TData, TVariables = void>(
   queryClient: QueryClient,
@@ -414,7 +521,10 @@ export function usePatchDevLearner(): UseMutationResult<MeOut, ApiError, DevLear
   return useDevMutation((patch: DevLearnerPatchIn) => patchDevLearner(patch));
 }
 
-/** Deletes all learner progress, resets the clock and re-seeds the sample learner. */
+/**
+ * Resets the caller's progress and clock, and no one else's: the demo learner gets the sample history back, an
+ * account starts over at Unit 1.
+ */
 export function useResetDemo(): UseMutationResult<DevResetOut, ApiError, void> {
   return useDevMutation(() => resetDemo());
 }

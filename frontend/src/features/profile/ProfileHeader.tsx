@@ -13,14 +13,16 @@ const FRIENDS = "the friends list";
 interface ProfileHeaderProps {
   user: ProfileUser;
   course: CourseBrief;
+  /** The signed-in learner's email, on their own profile. */
+  email?: string | null;
 }
 
 /**
- * The top of a profile: the avatar panel, the name with "@username · Joined {Month} {Year}", the course,
- * following and followers counts, and the friend actions. There is no social graph, so both counts are 0
- * and every friends control opens Coming soon.
+ * The top of a profile: the avatar panel, the name with "@username · Joined {Month} {Year}" (and the email on
+ * a signed-in learner's own profile), the course, following and followers counts, and the friend actions.
+ * There is no social graph, so both counts are 0 and every friends control opens Coming soon.
  */
-export function ProfileHeader({ user, course }: ProfileHeaderProps) {
+export function ProfileHeader({ user, course, email }: ProfileHeaderProps) {
   const showComingSoon = useComingSoon();
   return (
     <header>
@@ -32,6 +34,7 @@ export function ProfileHeader({ user, course }: ProfileHeaderProps) {
         <p className="mt-1 text-body text-fg-2">
           @{user.username} · Joined {formatMonthYear(user.joinedAt)}
         </p>
+        {email && <p className="mt-0.5 truncate text-body text-fg-2">{email}</p>}
         <div className="mt-5 flex">
           <Stat label="Courses">
             <FlagIcon code={course.flagKey} size={32} title={course.title} />

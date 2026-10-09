@@ -5,7 +5,7 @@ import { Button } from "@/components/ui";
 import { RightRailPortal } from "@/features/shell/RightRailSlot";
 import type { SettingsOut, SettingsPatchIn } from "@/lib/api/types";
 import { DISCLAIMER } from "@/lib/constants";
-import { AccountSection } from "./AccountSection";
+import { AccountSection, type AccountUser } from "./AccountSection";
 import { DailyGoalPicker } from "./DailyGoalPicker";
 import { PreferenceToggles } from "./PreferenceToggles";
 import { SettingsSection } from "./SettingsLayout";
@@ -17,7 +17,7 @@ import { useSettingsDraft } from "./useSettingsDraft";
 
 interface SettingsViewProps {
   saved: SettingsOut;
-  displayName: string;
+  user: AccountUser;
   saving: boolean;
   /** Sends the changed fields; `onSaved` runs once the server has them. */
   onSave: (patch: SettingsPatchIn, onSaved: () => void) => void;
@@ -30,7 +30,7 @@ interface SettingsViewProps {
  * the theme previews as soon as it is picked. The section menu sits in the right rail on wide screens and in
  * a tab strip above the page otherwise.
  */
-export function SettingsView({ saved, displayName, saving, onSave, demoTools }: SettingsViewProps) {
+export function SettingsView({ saved, user, saving, onSave, demoTools }: SettingsViewProps) {
   const draft = useSettingsDraft(saved);
   const menu = useSettingsSections(Boolean(demoTools));
   const save = () => onSave(draft.patch, draft.reset);
@@ -71,7 +71,7 @@ export function SettingsView({ saved, displayName, saving, onSave, demoTools }: 
         </SettingsSection>
         <SettingsSection title="Account">
           <AccountSection
-            displayName={displayName}
+            user={user}
             timezone={draft.values.timezone}
             onTimezoneChange={(zone) => draft.set("timezone", zone)}
           />

@@ -3,6 +3,7 @@ import type {
   ActivityOut,
   AnswerIn,
   AnswerResultOut,
+  AuthOut,
   ChestClaimOut,
   ClockAdvanceIn,
   ClockChangeOut,
@@ -16,6 +17,8 @@ import type {
   ISODate,
   LeagueAckOut,
   LeagueOut,
+  LoginIn,
+  LogoutOut,
   MeOut,
   PathOut,
   ProfileOut,
@@ -28,6 +31,7 @@ import type {
   SettingsPatchIn,
   SettingsUpdateOut,
   ShopOut,
+  SignupIn,
   StartSessionIn,
 } from "./types";
 
@@ -50,6 +54,25 @@ function queryString(params: Record<string, string | undefined>): string {
 
 export function getHealth(options: { timeoutMs?: number } = {}): Promise<HealthOut> {
   return apiFetch<HealthOut>("/health", options);
+}
+
+// ---------------- auth
+
+/** Creates an account and signs it in. Errors: EMAIL_TAKEN, VALIDATION_ERROR (field errors in `errors`). */
+export function signup(body: SignupIn): Promise<AuthOut> {
+  return apiFetch<AuthOut>("/auth/signup", { json: body, token: null });
+}
+
+/** Errors: INVALID_CREDENTIALS (unknown email and wrong password alike), VALIDATION_ERROR. */
+export function login(body: LoginIn): Promise<AuthOut> {
+  return apiFetch<AuthOut>("/auth/login", { json: body, token: null });
+}
+
+const LOGOUT_TIMEOUT_MS = 5_000;
+
+/** Revokes `token` on the server. Always answers 200, even for a token the server no longer knows. */
+export function logout(token: string): Promise<LogoutOut> {
+  return apiFetch<LogoutOut>("/auth/logout", { method: "POST", token, timeoutMs: LOGOUT_TIMEOUT_MS });
 }
 
 // ---------------- /me

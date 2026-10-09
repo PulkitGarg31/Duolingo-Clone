@@ -123,6 +123,34 @@ export function formatSimulatedTime(instantMs: number, timeZone: string): string
   return `${date.format(instantMs)} · ${time.format(instantMs)}`.replace(/\u202f/g, " ");
 }
 
+// ------------------------------------------------------------------------------------------------- reset
+
+export interface ResetCopy {
+  button: string;
+  title: string;
+  description: string;
+}
+
+/** The reset button and its confirmation. One endpoint: it resets whoever calls it, and no one else. */
+export function resetCopy(isDemo: boolean): ResetCopy {
+  return isDemo
+    ? {
+        button: "Reset demo data",
+        title: "Reset all progress?",
+        description: "This restores the sample learner to its seeded state.",
+      }
+    : {
+        button: "Reset my progress",
+        title: "Reset your progress?",
+        description: "Your lessons, XP, streak and league standing are erased, and your account starts over at Unit 1.",
+      };
+}
+
+/** Confirms a finished reset. */
+export function resetToast(isDemo: boolean): string {
+  return isDemo ? "Demo data reset to the sample learner." : "Your progress was reset. Back to Unit 1!";
+}
+
 // ------------------------------------------------------------------------------------------ learner shortcuts
 
 /** The parts of `me` the learner shortcuts read. */

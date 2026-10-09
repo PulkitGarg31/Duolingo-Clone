@@ -30,6 +30,16 @@ describe("railLayoutFor", () => {
     expect(railLayoutFor("/settings")).toEqual({ width: 380, blocks: ["settingsNav", "footer"] });
   });
 
+  it("closes the stack with the guest card for the demo learner", () => {
+    expect(railLayoutFor("/learn", { guest: true }).blocks).toEqual(["stats", "league", "quests", "super", "guest", "footer"]);
+    expect(railLayoutFor("/profile/24", { guest: true }).blocks).toEqual(["stats", "friends", "quests", "guest", "footer"]);
+    expect(railLayoutFor("/learn", { guest: false }).blocks).not.toContain("guest");
+  });
+
+  it("keeps the settings menu alone in the rail, even for the demo learner", () => {
+    expect(railLayoutFor("/settings", { guest: true }).blocks).toEqual(["settingsNav", "footer"]);
+  });
+
   it("falls back to stats, quests and the footer elsewhere", () => {
     expect(railLayoutFor("/super").blocks).toEqual(["stats", "quests", "footer"]);
   });
