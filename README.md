@@ -1,12 +1,12 @@
 # owlingo: a Duolingo web clone
 
-owlingo is a working clone of the Duolingo web app for English speakers learning Spanish. A learner follows a path of units and skills, plays lessons built from five kinds of exercises, earns XP and keeps a daily streak, loses and regains hearts, spends (mocked) gems in a shop, climbs weekly leagues against seeded competitors and collects achievements. The FastAPI backend owns every game rule (grading, hearts, streaks, XP, unlocks, leagues) on a carefully constrained SQLite schema. The Next.js frontend renders that state with Duolingo-style visuals, original SVG art, synthesized sound effects and browser text-to-speech. A built-in demo clock lets anyone jump to tomorrow or to the end of the league week and watch the rules react.
+owlingo is a working clone of the Duolingo web app for English speakers learning Spanish. A learner follows a path of units and skills, plays lessons built from five kinds of exercises, earns XP and keeps a daily streak, loses and regains hearts, spends (mocked) gems in a shop, climbs weekly leagues against seeded competitors and collects achievements. The FastAPI backend owns every game rule (grading, hearts, streaks, XP, unlocks, leagues) on a carefully constrained SQLite schema. The Next.js frontend renders that state with Duolingo-style visuals, original SVG art, synthesized sound effects and browser text-to-speech. Visitors can play straight away as the seeded demo learner, or sign up with an email and password for an account of their own. A built-in demo clock lets anyone jump to tomorrow or to the end of the league week and watch the rules react; every learner has their own clock and their own league groups, so each account is a sandbox.
 
 - **Live demo:** https://owlingo.vercel.app
 - **API docs (Swagger UI):** https://owlingo-api.onrender.com/api/v1/docs
 - **Engineering deep dive:** [docs/DESIGN.md](docs/DESIGN.md)
 
-> The API runs on Render's free tier, which sleeps when idle. If it was asleep, the first load shows a wake-up screen for up to a minute while the server boots and re-seeds the demo.
+> The API runs on Render's free tier, which sleeps when idle. If it was asleep, the first load shows a wake-up screen for up to a minute while the server boots and re-seeds the demo. Accounts live in the same SQLite file, so a restart or redeploy of the service erases them (see [Keeping the demo alive](#keeping-the-demo-alive-during-review)).
 
 ## Contents
 
@@ -65,11 +65,11 @@ Each item of the assignment, and where it lives.
 
 **3. Gamification and progress**
 
-- [x] **Daily streak with simulated, testable days.** Days are counted in the learner's own time zone. Streak Freezes cover missed days. The Demo tools move a shared, forward-only clock.
+- [x] **Daily streak with simulated, testable days.** Days are counted in the learner's own time zone. Streak Freezes cover missed days. The Demo tools move the learner's own forward-only clock.
 - [x] **XP totals and a leaderboard.** XP comes from an append-only ledger. Weekly leagues (Bronze to Diamond) rank the learner against 29 of 35 seeded competitors.
 - [x] **Hearts regenerate over time, through practice or a refill.** One heart every 5 hours, +1 heart for each completed practice session, or a full refill for 350 gems.
 - [x] **Daily goal indicator.** A thin ring around the XP bolt in the top bar, the "Earn 20 XP" daily quest, and the XP popover.
-- [x] **Everything persists per user.** All progress is stored in SQLite rows keyed by learner; the API tests prove isolation between two learners.
+- [x] **Everything persists per user.** Sign up or log in, and all progress is stored in SQLite rows keyed by your account; the API tests prove that learners never see or move each other's data, clocks or league standings.
 
 **4. Content management**
 
@@ -100,13 +100,15 @@ Each item of the assignment, and where it lives.
 - [x] **In-app purchases and Super:** gems are mocked; gem packs, Unlimited Hearts and the Super page are "Coming soon".
 - [x] **Friends and social:** friend controls on the profile and the `/friends` page are "Coming soon"; the leaderboard uses seeded competitors.
 - [x] **Multiple languages:** the course menu lists French and German as unpublished "Coming soon" courses (`GET /courses`).
-- [x] **Authentication:** simplified to a default logged-in learner, Alex.
+- [x] **Authentication:** built for real rather than as a placeholder: email and password accounts (sign up, log in, log out), with the seeded learner Alex kept as the instant, no-sign-up demo. Changing a password is "Coming soon".
 
 ## Reviewer guide
 
-Everything below works on the hosted demo. The Demo tools live in **Settings → Demo tools**; whenever the simulated clock runs ahead of real time, a small DEV badge in the corner links back to them.
+Everything below works on the hosted demo. The Demo tools live in **Settings → Demo tools**; whenever your simulated clock runs ahead of real time, a small DEV badge in the corner links back to them.
 
-**Starting point.** The seeded learner, Alex, is learning Spanish: a 13-day streak still at risk today (grey flame), one Streak Freeze equipped, 4 of 5 hearts, 820 gems, promoted to the Silver league last week, Unit 1 finished (with "Say hello" already Legendary), and the current lesson is **Drinks, lesson 2 of 3**. On the first visit the app quietly adopts your browser's time zone and, while the demo is untouched, rebuilds this starting point in it, so "today" is your own today.
+**Two ways in.** Opening the app goes straight to the path as the seeded demo learner, Alex: no sign-up. The landing page (`/welcome`, also MORE → ABOUT THIS CLONE) offers GET STARTED (sign up), I ALREADY HAVE AN ACCOUNT (log in) and TRY THE DEMO. Alex is one learner shared by every visitor without an account, so a "Create a profile to save your progress!" card invites you to an account of your own (in the right rail, on the profile and in Settings), and the MORE menu notes that everyone trying the demo shares this progress. An account of your own needs only a name, an email and a password of 8 or more characters; emails are never verified, so any address works.
+
+**Starting point.** The seeded learner, Alex, is learning Spanish: a 13-day streak still at risk today (grey flame), one Streak Freeze equipped, 4 of 5 hearts, 820 gems, promoted to the Silver league last week, Unit 1 finished (with "Say hello" already Legendary), and the current lesson is **Drinks, lesson 2 of 3**. On the first visit the app quietly adopts your browser's time zone and, while the demo is untouched, rebuilds this starting point in it, so "today" is your own today. A new account starts like any new learner instead: the first lesson of Unit 1, 5 hearts, 500 gems, no streak, Bronze, in the device's time zone.
 
 | To see… | Do this |
 |---|---|
@@ -125,7 +127,10 @@ Everything below works on the hosted demo. The Demo tools live in **Settings →
 | Typo and accent tolerance | In a typed exercise, leave out an accent or swap two letters of a long word |
 | A competitor's profile | Leaderboard → click any row |
 | Dark mode | Settings → Theme → Dark |
-| A fresh start | Settings → Demo tools → RESET DEMO DATA |
+| A fresh start | Settings → Demo tools → RESET DEMO DATA (RESET MY PROGRESS on an account) |
+| An account of your own | The rail's CREATE A PROFILE, MORE → CREATE A PROFILE, or GET STARTED on `/welcome`; the account opens on the path at Unit 1 |
+| Log out and back in | MORE → LOG OUT (Settings → Account on a phone), then `/login` with the same email and password; a wrong email or password gets the same message |
+| Accounts are sandboxes | On your account, press NEXT DAY a few times or RESET MY PROGRESS, then TRY THE DEMO (it signs you out): Alex's clock and progress have not moved. Log back in and your account is where you left it |
 
 **Demo tools buttons**
 
@@ -137,9 +142,10 @@ Everything below works on the hosted demo. The Demo tools live in **Settings →
 | END LEAGUE WEEK | Jump just past next Monday 00:00 UTC, which finalizes the league week |
 | DRAIN HEARTS, REFILL HEARTS | Set hearts to 0 or 5 |
 | +500 GEMS | Add 500 gems (recorded in the gem ledger like any other movement) |
-| RESET DEMO DATA | Delete all progress, return the clock to real time and rebuild the sample learner in your current time zone |
+| RESET DEMO DATA | Demo learner: delete Alex's progress, return his clock to real time and rebuild the sample history in your current time zone |
+| RESET MY PROGRESS | An account: delete its progress, return its clock to real time and start over at Unit 1 with 5 hearts and 500 gems (you stay signed in) |
 
-> The demo clock is global: everyone using the hosted demo shares it, and it only moves forward. RESET DEMO DATA is the only way back to real time.
+> Every learner has their own clock, and the tools act only on the learner using them. Alex, though, is shared: everyone who tries the demo without an account moves the same clock and sees the same progress. Time only moves forward; the reset is the only way back to real time.
 
 ## Tech stack
 
@@ -155,6 +161,7 @@ Everything below works on the hosted demo. The Demo tools live in **Settings →
 | ORM and data | SQLAlchemy 2.0 (typed `Mapped[]` models), SQLite (WAL) | Declarative constraints, partial indexes and composite keys; a single file that boots with the app |
 | Validation | Pydantic 2.13, pydantic-settings | One `ApiModel` base for camelCase wire models; environment-driven settings |
 | Time zones | `zoneinfo` + `tzdata` | IANA zones for learner-local streak days on every platform |
+| Accounts | `hashlib.scrypt`, `secrets` and `hmac` from the standard library | Memory-hard password hashing, random bearer tokens and constant-time checks with no extra dependency |
 | Backend tests and lint | pytest 9 (+ pytest-cov, httpx2 for the TestClient), Ruff | Domain, database, API and seed suites; Ruff includes the timezone-aware datetime rules |
 | Hosting | Vercel (frontend), Render free tier (backend) | Zero-cost hosting; the Render blueprint lives in `render.yaml` |
 | CI | GitHub Actions | Ruff, seed validation and pytest; ESLint, type check, Vitest and a production build |
@@ -175,11 +182,11 @@ Vercel serves the Next.js app; all data is fetched in the browser, straight from
 ```mermaid
 flowchart TB
   MW["RequestIdMiddleware and BodyLimitMiddleware (inside CORS)"] --> RT["api/v1 routers<br/>paths, status codes, headers, the commit"]
-  RT --> DP["api/deps<br/>session, clock, now, learner, catch-up sync"]
+  RT --> DP["api/deps<br/>session, learner (token or demo), clock, now, catch-up sync"]
   RT --> SV["services<br/>one function per use case"]
   SV --> DM["domain<br/>pure rules and constants"]
   SV --> RP["repositories<br/>small typed queries"]
-  RP --> MD["models<br/>30 tables and their constraints"]
+  RP --> MD["models<br/>31 tables and their constraints"]
   MD --> DB[("SQLite")]
 ```
 
@@ -191,22 +198,23 @@ flowchart TB
 | `repositories/` | small typed queries and eager loading | applies rules or commits |
 | `models/` | tables, constraints and relationships | carries behaviour |
 
-**One request, end to end.** The middleware assigns a request id and refuses a body over 64 KiB. FastAPI resolves the dependencies once per request: a database session, the clock (real time plus the demo offset), a single `now`, the current learner, and the request context, which first brings the learner's state up to `now` (finalize ended league weeks, regenerate hearts, settle the streak, expire an idle session) and commits that catch-up; the learner's rows are then read again, so a write another tab committed in between is never acted on with stale values. The router then calls exactly one service function and commits its work. The response leaves with `X-Request-ID`, `X-Boot-Id`, `X-Server-Time` and `Cache-Control: no-store`. Writes are serialized by SQLite `BEGIN IMMEDIATE` transactions. The course content and catalogues never change while the server runs, so they are read once and kept in memory (`backend/app/services/reference.py`): a lesson completion runs about 54 SQL statements and a profile about 22.
+**One request, end to end.** The middleware assigns a request id and refuses a body over 64 KiB. FastAPI resolves the dependencies once per request: a database session, the current learner (the account an `Authorization: Bearer` token belongs to, or the demo learner when the request sends none), that learner's clock (real time plus their own offset), a single `now`, and the request context, which first brings the learner's state up to `now` (finalize the learner's ended league weeks, regenerate hearts, settle the streak, expire an idle session) and commits that catch-up; the learner's rows are then read again, so a write another tab committed in between is never acted on with stale values. The router then calls exactly one service function and commits its work. The response leaves with `X-Request-ID`, `X-Boot-Id`, `X-Server-Time` and `Cache-Control: no-store`. Writes are serialized by SQLite `BEGIN IMMEDIATE` transactions. The course content and catalogues never change while the server runs, so they are read once and kept in memory (`backend/app/services/reference.py`): a lesson completion runs about 54 SQL statements and a profile about 22.
 
-**Time.** `backend/app/core/clock.py` is the only module that reads the wall clock (a test enforces it). The game's time is real UTC time plus a forward-only offset stored in `app_state`; the Demo tools only ever add to it. Every rule receives the request's single `now`, and tests freeze it.
+**Time.** `backend/app/core/clock.py` is the only module that reads the wall clock (a test enforces it). A learner's game time is real UTC time plus a forward-only offset stored on their own row (`users.clock_offset_seconds`); the Demo tools only ever add to the caller's offset. Every rule receives the request's single `now`, and tests freeze it. Sign-in tokens and `/health` use real time, so time travel never signs anyone out.
 
 ### Frontend
 
-- **Route groups.** `(main)` pages render inside the app shell (sidebar or tabs, top bar, right rail); `(lesson)/lesson/[sessionId]` is the full-screen player for every kind of session. Both sit behind `ServerWakeGate`, which shows a sleeping-owl screen while the API boots, keeps the server awake with a `/health` ping every 4 minutes, and notices a server restart from the `X-Boot-Id` header.
+- **Route groups.** `(main)` pages render inside the app shell (sidebar or tabs, top bar, right rail); `(lesson)/lesson/[sessionId]` is the full-screen player for every kind of session. Both sit behind `ServerWakeGate`, which shows a sleeping-owl screen while the API boots, keeps the server awake with a `/health` ping every 4 minutes, and notices a server restart from the `X-Boot-Id` header. `(auth)` holds `/login` and `/signup`, which paint at once and wake the server in the background while the visitor types.
+- **Accounts.** A successful log-in or sign-up stores the token in `localStorage` (`frontend/src/lib/auth/tokenStore.ts`); `apiFetch` sends it as `Authorization: Bearer …`, and without one the API answers as the demo learner. Signing in, logging out or picking the demo while signed in empties the query cache, because every cached screen belonged to the previous learner. A `401 UNAUTHENTICATED` (an expired or revoked token, or a server restart that erased the account) drops the token, and the tab lands on the landing page with "You were signed out".
 - **Server state** lives in TanStack Query: one hook per GET endpoint and one per write (`frontend/src/lib/queries`). Game numbers are never guessed on the client; caches change from the server's answers.
 - **Lesson state** is one pure reducer (`frontend/src/lib/lesson/lessonMachine.ts`) driven by a controller hook that performs the requests, sounds and speech. A pure `buildCelebrations(receipt)` decides which celebration screens follow a lesson.
 - **Server time.** Every countdown runs on server time, estimated from the `X-Server-Time` header, so time travel shows correctly in the browser.
 
-The full request lifecycle, the session engine and the frontend state machine are described in [docs/DESIGN.md](docs/DESIGN.md).
+The full request lifecycle, accounts and sign-in, the session engine and the frontend state machine are described in [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Database schema
 
-30 tables in five groups, linked by 39 foreign keys. Everything a learner does is stored as facts (sessions, answers, ledger rows); totals and progress are computed from those facts. The four diagrams below cover every table and every foreign key; a table from another group appears as a plain box where it connects.
+31 tables in five groups, linked by 41 foreign keys. Everything a learner does is stored as facts (sessions, answers, ledger rows); totals and progress are computed from those facts. The four diagrams below cover every table and every foreign key; a table from another group appears as a plain box where it connects.
 
 **Content: the course tree**
 
@@ -256,7 +264,7 @@ erDiagram
   }
 ```
 
-**Learner and play: who plays, and each session's queue of attempts**
+**Learner and play: who plays, how they sign in, and each session's queue of attempts**
 
 ```mermaid
 erDiagram
@@ -264,6 +272,7 @@ erDiagram
   users ||--o| user_settings : preferences
   users ||--o| user_stats : "game counters"
   users ||--o| bot_profiles : "bot pace"
+  users ||--o{ auth_sessions : "signs in with"
   leagues ||--o{ user_stats : "current tier"
   users ||--o{ lesson_sessions : plays
   path_nodes |o--o{ lesson_sessions : "node played"
@@ -271,6 +280,20 @@ erDiagram
   lesson_sessions ||--o{ session_items : queue
   exercises ||--o{ session_items : "asked as"
 
+  users {
+    int id PK
+    text username UK
+    text email UK "accounts only, lowercased"
+    text password_hash "set exactly with email"
+    int clock_offset_seconds "own clock, forward only"
+  }
+  auth_sessions {
+    int id PK
+    int user_id FK
+    text token_hash UK "sha256 of the token"
+    datetime expires_at "30 days, real time"
+    datetime revoked_at "set by logout"
+  }
   user_stats {
     int user_id PK, FK
     int gems ">= 0"
@@ -347,11 +370,12 @@ erDiagram
   }
 ```
 
-**Gamification and system: leagues, achievements, quests, the shop catalogue and the demo clock**
+**Gamification and system: leagues, achievements, quests, the shop catalogue and the seed bookkeeping**
 
 ```mermaid
 erDiagram
   leagues ||--o{ league_cohorts : "weekly groups"
+  users ||--o{ league_cohorts : owns
   league_cohorts ||--o{ league_memberships : members
   users ||--o{ league_memberships : competes
   achievements ||--o{ achievement_tiers : levels
@@ -363,8 +387,9 @@ erDiagram
 
   league_cohorts {
     int id PK
+    int owner_user_id FK "its only human member"
     int league_tier FK
-    date week_start "a Monday, unique per tier"
+    date week_start "a Monday, unique per owner and tier"
     datetime finalized_at
   }
   league_memberships {
@@ -383,7 +408,8 @@ erDiagram
   }
   app_state {
     int id PK "always 1"
-    int clock_offset_seconds "forward only"
+    datetime seeded_at "last demo seed"
+    text seed_version "sha256 of the seed files"
   }
 ```
 
@@ -392,10 +418,10 @@ erDiagram
 | Group | Tables | What they hold | Requirement |
 |---|---|---|---|
 | Content (10) | `courses`, `units`, `path_nodes`, `lessons`, `exercises`, `exercise_options`, `exercise_answers`, `exercise_pairs`, `guidebook_phrases`, `glossary_terms` | The course tree; typed child tables for choices and tiles, accepted answers and match pairs; Guidebook phrases; word hints | Course content stored in the database and seeded; five exercise types; path navigation |
-| Learner (4) | `users`, `user_settings`, `user_stats`, `bot_profiles` | The default learner and the 35 competitors (a bot is a user with a `bot_profiles` row); preferences; the only mutable counters | Default learner, settings placeholders, progress that persists, seeded leaderboard |
+| Learner (5) | `users`, `user_settings`, `user_stats`, `bot_profiles`, `auth_sessions` | The demo learner, accounts (email and password hash) and the 35 competitors (a bot is a user with a `bot_profiles` row); each human's forward-only clock offset; preferences; the only mutable counters; sign-in tokens, stored as hashes | Accounts and the demo learner, settings placeholders, progress that persists per user, simulated day logic, seeded leaderboard |
 | Play (2) | `lesson_sessions`, `session_items` | One row per play-through and one row per attempt (retries are appended) | Lesson player, server-side grading, skill progress (derived) |
 | Ledgers (4) | `xp_events`, `gem_transactions`, `purchases`, `activity_days` | Append-only XP and gem ledgers, purchases, and the streak calendar (active and frozen days) | XP totals, daily goal, mocked gems and refills, streak |
-| Gamification and system (10) | `leagues`, `league_cohorts`, `league_memberships`, `achievements`, `achievement_tiers`, `user_achievements`, `shop_items`, `quests`, `quest_claims`, `app_state` | League ladder and weekly cohorts, achievement catalogue and unlocks, shop catalogue, daily quests and paid rewards, the demo clock | Leaderboard, achievements, shop, daily goal quests, simulated day logic |
+| Gamification and system (10) | `leagues`, `league_cohorts`, `league_memberships`, `achievements`, `achievement_tiers`, `user_achievements`, `shop_items`, `quests`, `quest_claims`, `app_state` | League ladder and each learner's private weekly cohorts, achievement catalogue and unlocks, shop catalogue, daily quests and paid rewards, the seed bookkeeping | Leaderboard, achievements, shop, daily goal quests |
 
 ### Stored vs derived
 
@@ -413,47 +439,52 @@ erDiagram
 
 ### Integrity rules
 
-- **`ON DELETE`: cascade inside an aggregate, restrict across aggregates.** Deleting a course cascades through its units, nodes, lessons and exercises; deleting a user cascades through their settings, stats, sessions, ledgers and memberships. A learner's history pointing at content or catalogue rows uses `RESTRICT`, so content that has history can never be deleted and history is never silently erased. Two optional links (`glossary_terms.node_id`, `user_achievements.session_id`) use `SET NULL`. In total: 27 cascade, 10 restrict, 2 set-null foreign keys.
+- **`ON DELETE`: cascade inside an aggregate, restrict across aggregates.** Deleting a course cascades through its units, nodes, lessons and exercises; deleting a user cascades through their settings, stats, sessions, ledgers, memberships, own league cohorts and sign-in sessions. A learner's history pointing at content or catalogue rows uses `RESTRICT`, so content that has history can never be deleted and history is never silently erased. Two optional links (`glossary_terms.node_id`, `user_achievements.session_id`) use `SET NULL`. In total: 29 cascade, 10 restrict, 2 set-null foreign keys.
 - **Partial unique indexes** enforce "at most one": one correct choice per exercise, one primary accepted answer, one active session per learner, one chest claim per learner and chest, one legendary fee per session, one gem row per purchase and per quest claim.
 - **A composite foreign key** `lesson_sessions(lesson_id, node_id) → lessons(id, node_id)` makes the database refuse a session whose node is not its lesson's node.
-- **109 named CHECK constraints** cover enums, ranges and cross-column rules: hearts 0 to 5 with the anchor set exactly when below 5, gems never negative, at most two freezes, a session's status, end reason and end time always agreeing, each gem movement naming its source, a league week starting on a Monday, a forward-only clock offset.
+- **114 named CHECK constraints** cover enums, ranges and cross-column rules: hearts 0 to 5 with the anchor set exactly when below 5, gems never negative, at most two freezes, a session's status, end reason and end time always agreeing, each gem movement naming its source, a league week starting on a Monday, a forward-only clock offset per learner, an email and a password hash always set together, a token hash of exactly 64 characters (a SHA-256 in hex).
 - **Every foreign key column leads an index** (SQLite does not create them); a test checks it.
 
 The complete table list with columns, the index map and the SQLite lessons are in [docs/DESIGN.md](docs/DESIGN.md#2-schema).
 
 ## API overview
 
-REST under `/api/v1`, camelCase JSON, ISO-8601 UTC instants ending in `Z`, and learner-local dates as `YYYY-MM-DD`. Interactive docs are at `/api/v1/docs` and the OpenAPI document at `/api/v1/openapi.json`.
+REST under `/api/v1`, camelCase JSON, ISO-8601 UTC instants ending in `Z`, and learner-local dates as `YYYY-MM-DD`. Interactive docs are at `/api/v1/docs` and the OpenAPI document at `/api/v1/openapi.json`. Learner endpoints act as the account whose token is sent as `Authorization: Bearer <token>`, or as the demo learner when no `Authorization` header is sent.
 
 | # | Method | Path | Purpose |
 |---|---|---|---|
-| 1 | GET | `/health` | Liveness, seed status and the process's `bootId` (never syncs or writes) |
-| 2 | GET | `/me` | Everything the shell shows: stats, hearts, streak, daily goal, league card, pending league result, settings |
-| 3 | GET | `/me/settings` | Preferences and time zone |
-| 4 | PATCH | `/me/settings` | Partial update; a new time zone reports whether the untouched sample history was rebuilt in it or the streak shifted |
-| 5 | GET | `/me/activity?from&to` | One entry per local day: XP, goal in force, active / frozen / none (at most 92 days) |
-| 6 | GET | `/me/path` | Units and nodes with state, crown, progress and the actions each node offers |
-| 7 | POST | `/me/chests/{nodeId}/claim` | Open a reachable chest for its gems (once; a repeat replays) |
-| 8 | GET | `/me/league` | Tier ladder, this week's standings and last week's result |
-| 9 | POST | `/me/league/results/{membershipId}/ack` | Mark a league result modal as seen |
-| 10 | GET | `/me/quests` | Today's three daily quests and their progress |
-| 11 | POST | `/me/purchases` | Buy a shop item (requires `Idempotency-Key`); the only way to refill hearts |
-| 12 | GET | `/me/purchases/{purchaseId}` | A purchase (the `Location` of a new one) |
-| 13 | GET | `/users/{userId}/profile` | Profile stats and achievements; `userId` is an id or `me`, bots included |
-| 14 | GET | `/courses` | Course menu (public, cached for 5 minutes) |
-| 15 | GET | `/units/{unitId}/guidebook` | A unit's key phrases and tips (public, cached for 5 minutes) |
-| 16 | GET | `/shop/items` | Shop catalogue with each item's availability for the learner |
-| 17 | POST | `/sessions` | Start a lesson, practice, Legendary run or Timed practice (201), or resume the active one of the same kind and node (200) |
-| 18 | GET | `/sessions/{sessionId}` | The whole session, so a refreshed page resumes at its current item |
-| 19 | PUT | `/sessions/{sessionId}/items/{itemId}/answer` | Grade one answer slot (idempotent) |
-| 20 | POST | `/sessions/{sessionId}/complete` | Pay the rewards and return the receipt with a fresh `me` (idempotent) |
-| 21 | POST | `/sessions/{sessionId}/quit` | End a session early; the server decides the outcome (idempotent) |
-| 22 | GET | `/dev/clock` | Real time, offset and simulated time |
-| 23 | POST | `/dev/clock/advance` | Move time forward by 1 minute to 60 days |
-| 24 | POST | `/dev/clock/next-day` | Jump just past the learner's next local midnight |
-| 25 | POST | `/dev/clock/next-week` | Jump just past next Monday 00:00 UTC (league rollover) |
-| 26 | PATCH | `/dev/learner` | Set hearts and/or gems for a demo (gems go through the ledger) |
-| 27 | POST | `/dev/reset` | Delete learner data, set the offset to 0 and re-seed the sample learner |
+| 1 | GET | `/health` | Liveness, seed status, the process's `bootId` and real time (never syncs or writes, and sends no `X-Server-Time`) |
+| 2 | POST | `/auth/signup` | Create an account and sign it in (201): `{token, expiresAt, user}`; a taken email is `409 EMAIL_TAKEN` |
+| 3 | POST | `/auth/login` | Exchange an email and password for a new token; a wrong email or password is `401 INVALID_CREDENTIALS` |
+| 4 | POST | `/auth/logout` | Revoke the bearer token; always `{"loggedOut": true}` |
+| 5 | GET | `/me` | Everything the shell shows: the learner (with `email` and `isDemo`), stats, hearts, streak, daily goal, league card, pending league result, settings |
+| 6 | GET | `/me/settings` | Preferences and time zone |
+| 7 | PATCH | `/me/settings` | Partial update; a new time zone reports whether the untouched sample history was rebuilt in it or the streak shifted |
+| 8 | GET | `/me/activity?from&to` | One entry per local day: XP, goal in force, active / frozen / none (at most 92 days) |
+| 9 | GET | `/me/path` | Units and nodes with state, crown, progress and the actions each node offers |
+| 10 | POST | `/me/chests/{nodeId}/claim` | Open a reachable chest for its gems (once; a repeat replays) |
+| 11 | GET | `/me/league` | Tier ladder, this week's standings and last week's result |
+| 12 | POST | `/me/league/results/{membershipId}/ack` | Mark a league result modal as seen |
+| 13 | GET | `/me/quests` | Today's three daily quests and their progress |
+| 14 | POST | `/me/purchases` | Buy a shop item (requires `Idempotency-Key`); the only way to refill hearts |
+| 15 | GET | `/me/purchases/{purchaseId}` | A purchase (the `Location` of a new one) |
+| 16 | GET | `/users/{userId}/profile` | Profile stats and achievements; `userId` is an id or `me`, bots included |
+| 17 | GET | `/courses` | Course menu (public, cached for 5 minutes) |
+| 18 | GET | `/units/{unitId}/guidebook` | A unit's key phrases and tips (public, cached for 5 minutes) |
+| 19 | GET | `/shop/items` | Shop catalogue with each item's availability for the learner |
+| 20 | POST | `/sessions` | Start a lesson, practice, Legendary run or Timed practice (201), or resume the active one of the same kind and node (200) |
+| 21 | GET | `/sessions/{sessionId}` | The whole session, so a refreshed page resumes at its current item |
+| 22 | PUT | `/sessions/{sessionId}/items/{itemId}/answer` | Grade one answer slot (idempotent) |
+| 23 | POST | `/sessions/{sessionId}/complete` | Pay the rewards and return the receipt with a fresh `me` (idempotent) |
+| 24 | POST | `/sessions/{sessionId}/quit` | End a session early; the server decides the outcome (idempotent) |
+| 25 | GET | `/dev/clock` | The caller's clock: real time, their offset and their simulated time |
+| 26 | POST | `/dev/clock/advance` | Move the caller's time forward by 1 minute to 60 days |
+| 27 | POST | `/dev/clock/next-day` | Jump just past the caller's next local midnight |
+| 28 | POST | `/dev/clock/next-week` | Jump just past next Monday 00:00 UTC (league rollover) |
+| 29 | PATCH | `/dev/learner` | Set the caller's hearts and/or gems for a demo (gems go through the ledger) |
+| 30 | POST | `/dev/reset` | Start the caller over at real time: the demo learner gets the sample history again, an account a new account's start (Unit 1, 5 hearts, 500 gems) |
+
+Every `/dev` tool acts on the caller alone, so trying them on an account never touches the demo learner or anyone else.
 
 There is no separate refill, "practice to earn hearts" or achievements endpoint: a refill is a purchase of `heart_refill`, earning a heart is `POST /sessions {"kind": "practice"}`, and achievements come with the profile and the completion receipt.
 
@@ -484,7 +515,7 @@ X-Request-ID: d04b80edfb51
 `errors[]` is filled only for `VALIDATION_ERROR` (at most 20 entries), for example `{"field": "body.dailyGoalXp", "message": "Input should be 10, 20, 30 or 50", "kind": "literal_error"}`. Ids in the URL (`sessionId`, `itemId`, `nodeId`, `membershipId`, `purchaseId`, `userId`, `unitId`) must be 1 to 2^63−1 in ASCII digits, so an id the database could not hold is a 422 `VALIDATION_ERROR`, never a failed query; a request body over 64 KiB is refused unread with the same code. Unhandled exceptions become `500 INTERNAL_ERROR` inside the CORS middleware, so the browser can still read them.
 
 <details>
-<summary>All 26 error codes</summary>
+<summary>All 29 error codes</summary>
 
 | Code | HTTP | When |
 |---|---|---|
@@ -492,6 +523,8 @@ X-Request-ID: d04b80edfb51
 | `INVALID_ANSWER` | 422 | The answer does not fit the exercise: another type, foreign option, tile or pair ids, a tile used twice, CAN'T LISTEN on a non-listening item, an incomplete matching |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | The same `Idempotency-Key` was used to buy a different item |
 | `IDEMPOTENCY_KEY_REQUIRED` | 400 | A purchase without the header, or a key longer than 64 characters |
+| `UNAUTHENTICATED` | 401 | The bearer token is unknown, expired or revoked, or the `Authorization` header holds no bearer token (sent with `WWW-Authenticate: Bearer`; the client drops the token) |
+| `INVALID_CREDENTIALS` | 401 | A login with an unknown email or a wrong password: both get this same answer, after the same hashing work |
 | `NOT_FOUND` | 404 | Unknown id, another learner's resource, or an unknown route |
 | `METHOD_NOT_ALLOWED` | 405 | Wrong HTTP method |
 | `BOT_ACCOUNT` | 403 | `X-User-Id` names a league bot |
@@ -513,13 +546,14 @@ X-Request-ID: d04b80edfb51
 | `ITEM_OUT_OF_ORDER` | 409 | Answering an item that is not the current one (`currentItemId`) |
 | `ITEM_ALREADY_ANSWERED` | 409 | A second, different answer to an answered item |
 | `LEAGUE_RESULT_NOT_READY` | 409 | Acknowledging a week that is not finalized |
+| `EMAIL_TAKEN` | 409 | Signing up with an email that already has an account (emails are compared trimmed and lowercased) |
 | `INTERNAL_ERROR` | 500 | Anything unexpected (logged with its traceback and request id) |
 
 </details>
 
 ### Idempotency
 
-Retries and double clicks are safe. Purchases carry an `Idempotency-Key` header because buying twice can be legitimate (a second Streak Freeze); every other write is idempotent through its natural key.
+Retries and double clicks are safe. Purchases carry an `Idempotency-Key` header because buying twice can be legitimate (a second Streak Freeze); every other write is idempotent through its natural key or guarded by a unique one.
 
 | Write | How a repeat is handled |
 |---|---|
@@ -530,10 +564,18 @@ Retries and double clicks are safe. Purchases carry an `Idempotency-Key` header 
 | `POST /me/chests/{nodeId}/claim` | The gem ledger row is the claim, unique per learner and chest; a repeat replays it |
 | `POST /me/purchases` | `UNIQUE(user_id, idempotency_key)`: the same key and item replay the purchase (200); the same key for another item is `422 IDEMPOTENCY_KEY_REUSED` |
 | `POST /me/league/results/{membershipId}/ack` | Keeps the first acknowledgement time |
+| `POST /auth/signup` | `UNIQUE(email)`: a repeat meets the account the first attempt created and is `409 EMAIL_TAKEN`, so the app never retries a signup on its own |
+| `POST /auth/logout` | Revoking a token that is already revoked, expired or unknown changes nothing and still answers 200 |
 
-### Current learner
+### Accounts and the current learner
 
-There is no sign-in: every request acts as the default learner (`DEFAULT_USERNAME`, `alex`). When `ALLOW_USER_HEADER=true` (local runs and tests), an `X-User-Id: <id>` header acts as another learner instead: an unknown id is `404 NOT_FOUND`, a bot is `403 BOT_ACCOUNT`. The frontend never sends it, and it is off on Render (ignored, and not allowed by CORS). The API tests use it to prove that learners never see each other's data.
+Each request acts as one learner, chosen in this order (`get_current_user` in `backend/app/api/deps.py`):
+
+1. **A bearer token** (`Authorization: Bearer <token>`): the account it was issued to. A token that is unknown, expired or revoked, or a header with no bearer token in it, is `401 UNAUTHENTICATED`, never a quiet switch to the demo learner.
+2. **`X-User-Id: <id>`**, only when `ALLOW_USER_HEADER=true` (local runs and tests): that learner. An unknown id is `404 NOT_FOUND`, a bot is `403 BOT_ACCOUNT`. The frontend never sends it, and it is off on Render (ignored, and not allowed by CORS). The API tests use it, next to real accounts, to prove that learners never see each other's data.
+3. **Otherwise the demo learner** (`DEFAULT_USERNAME`, `alex`), so the demo works with no sign-in at all. `me.user.isDemo` tells the app which case it is in.
+
+Sign-up takes a display name (1 to 40 characters), an email (trimmed, lowercased, a plausible shape, never verified) and a password of 8 to 128 characters, plus the device's time zone when the browser knows it. Passwords are hashed with the standard library's scrypt and a fresh salt; a token is 32 random bytes, returned once and stored only as its SHA-256 in `auth_sessions`, valid for 30 days of real time unless logout revokes it first. Logging in again issues another token alongside the first. The username is derived from the email (`ana@example.com` becomes `ana`, or `ana2` when `ana` is taken).
 
 ### Examples
 
@@ -562,6 +604,14 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST $API/me/purchases -H 'Content-T
 curl -s -X POST $API/me/purchases -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $KEY" -d '{"itemCode":"streak_freeze"}' | jq '{replayed, gems, freezes: .effect.streakFreezes}'
 # {"replayed": true, "gems": 620, "freezes": 2}    (charged once)
+
+# 4. Sign up, then act as the new account with its token
+TOKEN=$(curl -s -X POST $API/auth/signup -H 'Content-Type: application/json' \
+  -d '{"displayName":"Ana","email":"ana@example.com","password":"correct horse","timezone":"Europe/Madrid"}' | jq -r .token)
+curl -s $API/me -H "Authorization: Bearer $TOKEN" | jq '{name: .user.displayName, isDemo: .user.isDemo, hearts: .hearts.current, gems, league: .league.name}'
+# {"name": "Ana", "isDemo": false, "hearts": 5, "gems": 500, "league": "Bronze"}
+curl -s -X POST $API/auth/logout -H "Authorization: Bearer $TOKEN"     # {"loggedOut": true}
+curl -s $API/me -H "Authorization: Bearer $TOKEN" | jq .code           # "UNAUTHENTICATED" (401)
 ```
 
 ## Game rules in plain words
@@ -570,6 +620,7 @@ All constants live in `backend/app/domain/rules.py` (prices and quest rewards ar
 
 | Rule | Value |
 |---|---|
+| New account | the first lesson of Unit 1, 5 hearts, 500 gems, no streak, Bronze, daily goal 20 XP |
 | Hearts | 5 at most; one comes back every 5 hours (`HEART_REGEN_MINUTES=300`) |
 | Heart refill | 350 gems, the same price everywhere |
 | Practice reward | +1 heart for each completed practice session |
@@ -584,7 +635,7 @@ All constants live in `backend/app/domain/rules.py` (prices and quest rewards ar
 | Legendary | 100 gems to enter; up to 12 exercises; no hints; 3 lives; 40 XP plus combo on a pass |
 | Timed practice | 30 s to start; +5 s per correct multiple choice or match, +10 s per correct translate or fill in the blank; up to 20 exercises; 1 XP per correct answer |
 | Idle session | abandoned after 2 hours without an answer or a resume |
-| Leagues | unlock after 10 completed sessions of any kind; cohorts of 30 (the learner plus 29 bots drawn from 35) |
+| Leagues | unlock after 10 completed sessions of any kind; private cohorts of 30 (the learner plus 29 bots drawn from 35) |
 | League ladder (promote / demote) | Bronze 20/0 · Silver 15/7 · Gold 10/7 · Sapphire, Ruby, Emerald, Amethyst and Pearl 7/7 · Obsidian 5/7 · Diamond 0/5 |
 | Chests | 20 gems each, once |
 | Daily quests | 3 a day: the daily goal (10 gems), one core quest (10 gems), one hard quest (15 gems) |
@@ -602,7 +653,7 @@ A wrong answer that leaves out one word or gets one word wrong says "You missed 
 
 **XP and combo.** Each completed session writes one ledger row per XP line: the base amount, the combo bonus and the boost's extra. The combo is the longest run of correct answers in the session; a perfect 6-exercise lesson earns 10 + 5 = 15 XP. Failed or abandoned sessions earn nothing.
 
-**Leagues and seeded competitors.** A league week is one global window from Monday 00:00 UTC. Once leagues are unlocked, the learner's first XP of the week joins the cohort of their tier; the first learner of a (tier, week) opens it and 29 bots are drawn for it from a pool of 35, the same way in every process. Ties go to whoever reached the XP first. When a week ends, the next request finalizes it: every member gets a final XP, rank and outcome, the top places promote (with at least 1 XP) and the bottom places demote. A learner who earned no XP that week has no membership, so a skipped week never demotes. Bots are ordinary users with a profile row: a bot's weekly XP is a pure function of its seed, pace, the week and the tier, made of 10 to 20 XP sessions spread over the week, and only sessions before "now" count, so the board moves with real and simulated time without writing anything. A bot's profile total is its baseline plus the same league XP, so its profile always agrees with the board.
+**Leagues and seeded competitors.** A league week is one global window from Monday 00:00 UTC. Once leagues are unlocked, the learner's first XP of the week opens their own cohort of their tier, and 29 bots are drawn for it from a pool of 35, seeded by the learner, the tier and the week, so every process draws the same field. Every learner competes in private cohorts (a bot can sit in many at once), so one account's time travel never moves another learner's board. Ties go to whoever reached the XP first. When a week ends on the learner's clock, their next request finalizes it: every member gets a final XP, rank and outcome, the top places promote (with at least 1 XP) and the bottom places demote. A learner who earned no XP that week has no membership, so a skipped week never demotes. Bots are ordinary users with a profile row: a bot's weekly XP is a pure function of its seed, pace, the week and the tier, made of 10 to 20 XP sessions spread over the week, and only sessions before "now" count, so the board moves with real and simulated time without writing anything. A bot's profile total is its baseline plus its league XP in the viewer's own cohorts, so its profile always agrees with the viewer's board.
 
 **Legendary.** On a finished skill, LEGENDARY charges 100 gems and starts a run of up to 12 of the skill's exercises, with typing, translating and fill-in-the-blank first and never match pairs. There are no hints, no hearts and no timer; the third mistake fails the run (the gems stay spent, and TRY AGAIN starts a new paid run). A pass pays 40 XP plus combo and turns the skill gold.
 
@@ -620,7 +671,7 @@ Six principles shape the code:
 | P2 | Store state only for real state machines or database-guarded balances | `user_stats` holds hearts, streak, freezes, gems and the league tier, each for a stated reason |
 | P3 | The database is the last line of defence | Deliberate `ON DELETE` rules, CHECKs for enums, ranges and cross-column rules, partial unique indexes, a composite foreign key |
 | P4 | The server is authoritative; the client renders | Grading, hearts, retries, XP, streak, unlocks and league joins all happen on the server |
-| P5 | Time is injected, never read | One clock module, one `now` per request, a forward-only offset |
+| P5 | Time is injected, never read | One clock module, one `now` per request, a forward-only offset per learner |
 | P6 | Every mutation is idempotent or guarded | Answer slots, compare-and-set completion, unique XP lines, idempotency keys, unique chest claims, resumable session starts |
 
 **Why does the server grade answers?**
@@ -639,13 +690,19 @@ An answer is a `PUT` to one item of the session's queue. An identical repeat rep
 Hearts are a token bucket: a count plus the instant the running interval started. Each request adds one heart per whole interval since then and keeps the remainder. A CHECK ties "no anchor" to "hearts are full", and both columns are always written together.
 
 **How can "tomorrow" be tested?**
-Every rule takes `now` as an argument. Production uses real time plus a stored offset that the Demo tools increase; tests swap in a frozen clock and move it explicitly. A request reads the clock once, so the catch-up sync and the handler always agree on the time.
+Every rule takes `now` as an argument. Production uses real time plus the learner's stored offset, which the Demo tools increase; tests swap in a frozen clock and move it explicitly. A request reads the clock once, so the catch-up sync and the handler always agree on the time.
 
 **Why can't time go backwards?**
-Rows would end up in the future: a streak day after today, or XP earned tomorrow. The offset has a `CHECK (clock_offset_seconds >= 0)`, and the only rewind is RESET DEMO DATA, which deletes learner data and re-seeds.
+Rows would end up in the future: a streak day after today, or XP earned tomorrow. Each learner's offset has a `CHECK (clock_offset_seconds >= 0)`, and the only rewind is the reset, which deletes that learner's data and starts them over.
 
-**How does the leaderboard move with only one real learner?**
-Thirty-five seeded bots are real users whose weekly XP is a pure, cached function of their seed, pace, week, tier and the current time. Learners' XP is a ledger sum. Weeks finalize lazily, one at a time, writing final XP and rank for every member.
+**Why does every learner have their own clock?**
+So every account is a sandbox. If time were global, one visitor pressing END LEAGUE WEEK would end everyone's week. With an offset per learner and private league cohorts, a jump or a reset touches only the caller. The demo learner is still one shared learner, which the app says wherever it matters.
+
+**How are accounts kept safe?**
+Passwords are hashed with scrypt from Python's standard library, with a fresh salt and the parameters stored in each hash, and checked in constant time. A session token is 32 random bytes; only its SHA-256 is stored, so a copy of the database holds no usable token, and logging out revokes it. A login with an unknown email is checked against a hash nothing matches, so it takes as long as a wrong password and gets the same `401`: neither the answer nor its timing tells whether an account exists.
+
+**How does the leaderboard move without other real learners?**
+Thirty-five seeded bots are real users whose weekly XP is a pure, cached function of their seed, pace, week, tier and the current time. Each learner competes against 29 of them in private cohorts; learners' XP is a ledger sum. Weeks finalize lazily, one at a time, writing final XP and rank for every member.
 
 **Why child tables for exercises instead of a JSON column?**
 Accepted answers, choices, tiles and pairs get foreign keys, "exactly one correct choice" and "one primary answer" become partial unique indexes, match sides are unique, and everything is plain SQL. JSON appears only in two write-once caches (the submitted answer and the completion receipt).
@@ -686,11 +743,11 @@ On startup the server creates `backend/data/app.db` and seeds it if it is empty.
 ```bash
 python -m app.seed --check      # validate the seed files and print the totals (no database needed)
 python -m app.seed --reset      # drop and rebuild the local database (stop the server first)
-pytest -q                       # the full backend suite (about two minutes)
+pytest -q                       # the full backend suite (a few minutes)
 ruff check .                    # lint
 ```
 
-`POST /api/v1/dev/reset` (RESET DEMO DATA in the app) rebuilds the learner data without restarting.
+`POST /api/v1/dev/reset` (RESET DEMO DATA in the app, RESET MY PROGRESS on an account) rebuilds the caller's data without restarting.
 
 ### Frontend
 
@@ -718,7 +775,7 @@ The backend allows `http://localhost:3000` by default; for another origin set `C
 | `DATABASE_URL` | `sqlite:///./data/app.db` | SQLite file (its folder is created at startup) |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated exact browser origins |
 | `CORS_ORIGIN_REGEX` | empty | Optional origin pattern, e.g. for Vercel preview deployments |
-| `DEFAULT_USERNAME` | `alex` | The implicit logged-in learner |
+| `DEFAULT_USERNAME` | `alex` | The demo learner, served to requests without a token |
 | `ALLOW_USER_HEADER` | `true` | Honour `X-User-Id` (keep it `false` in production) |
 | `ENABLE_DEV_TOOLS` | `true` | The `/dev` time-travel and reset endpoints |
 | `SEED_TIMEZONE` | `Asia/Kolkata` | The sample learner's zone until the browser's zone is adopted |
@@ -753,15 +810,16 @@ The build never calls the API, so a sleeping backend cannot break a frontend dep
 
 ### Keeping the demo alive during review
 
-The SQLite file lives on Render's ephemeral disk. It is created and seeded on every boot, so a **redeploy, a restart, or a spin-down after about 15 idle minutes** brings back a fresh demo. The app notices the new `X-Boot-Id` and tells the learner "The demo server restarted, so progress was reset".
+The SQLite file lives on Render's ephemeral disk. It is created and seeded on every boot, so a **redeploy, a restart, or a spin-down after about 15 idle minutes** brings back a fresh demo and **erases every account** created since the last boot (the sign-up and log-in pages say so). The app notices the new `X-Boot-Id` and tells the learner "The demo server restarted, so progress was reset"; a signed-in tab finds its token refused and is signed out.
 
 - **Built-in keep-alive.** While the app is open in a browser it pings `/api/v1/health` every 4 minutes, so a reviewer who pauses does not lose their progress.
-- **Scheduled keep-alive.** `.github/workflows/keep-alive.yml` requests `/api/v1/health` every 5 minutes, so the server stays up even with no tab open (set the repository variable `API_URL` if the backend URL differs). GitHub may delay scheduled runs at busy times, so for extra safety a free uptime monitor (for example UptimeRobot or cron-job.org) can ping the same URL. `/health` never writes, so pings cost nothing in state, and one always-on free service fits within Render's monthly free hours.
+- **Scheduled keep-alive.** `.github/workflows/keep-alive.yml` requests `/api/v1/health` every 5 minutes, so the server (and the accounts on it) stays up between deploys even with no tab open (set the repository variable `API_URL` if the backend URL differs). GitHub may delay scheduled runs at busy times, so for extra safety a free uptime monitor (for example UptimeRobot or cron-job.org) can ping the same URL. `/health` never writes, so pings cost nothing in state, and one always-on free service fits within Render's monthly free hours.
 - **Avoid redeploys during review.** `autoDeploy: true` redeploys (and re-seeds) on every push to the default branch: stop pushing once the link is shared, or set `autoDeploy: false`.
 
 ## Assumptions and deviations
 
-- **Simplified authentication.** There is one default logged-in learner (Alex). `X-User-Id` exists for local runs and tests only; real auth would replace a single dependency (`get_current_user`).
+- **Accounts plus an instant demo.** Visitors can sign up, log in and log out with an email and password, and their progress is stored under their account. A request without a token still acts as the seeded learner, Alex, so the demo link works with no sign-up; Alex is shared by everyone who has not signed in, which the guest card and the MORE menu point out. Emails are not verified, there is no password reset, and changing a password is "Coming soon". `X-User-Id` exists for local runs and tests only.
+- **A sandbox per account.** Every learner has their own forward-only clock and their own league cohorts, and the Demo tools and the reset act only on the caller. The demo learner's reset rebuilds the sample history; an account's reset starts it over at Unit 1 with 5 hearts and 500 gems.
 - **XP in the top bar.** Duolingo's web top bar has no XP counter, but the assignment asks for one, so an XP pill sits between the streak and the gems, with the daily goal drawn as a thin ring around its bolt.
 - **Three stat cards** on the lesson-complete screen: total XP (counting up through the combo and boost), time and accuracy.
 - **Crown badges.** Finished skills carry a small crown with their level (1 when completed, a gold crown when Legendary), because the assignment asks for crowns per skill.
@@ -772,11 +830,10 @@ The SQLite file lives on Render's ephemeral disk. It is created and seeded on ev
 - **Time zone adoption.** On the first visit the app adopts the browser's time zone. While the demo learner is untouched (no session started and no gems moved since the demo was seeded), the server rebuilds the sample history in that zone (`timezoneEffect: "reseeded"`), so every stored day, from today's XP to the streak calendar, is a day of the reviewer's zone. Otherwise, and for later changes made in Settings, the streak's last covered day moves by the calendar difference between the two zones (`"shifted"`), so the streak is neither broken nor inflated; calendar days already stored keep their dates, so the calendar can show a gap or an overlap at the switch. Old zone names that some browsers still report are stored under their current IANA name (Chrome's `Asia/Calcutta` becomes `Asia/Kolkata`), so an Indian visitor is already in the seeded zone and nothing changes (`"none"`).
 - **UTC league weeks.** A league week is one global window from Monday 00:00 UTC, while streak days follow the learner's own zone.
 - **Leaderboard unlock after 10 sessions.** Leagues open after 10 completed sessions of any kind (lessons, practice, Legendary or Timed), in the spirit of Duolingo's "complete 10 lessons".
-- **Shared demo clock.** The simulated time is global: everyone on the hosted demo shares one offset, because bots, cohorts and week rollovers are shared state.
 - **Rewards.** Quest rewards are paid automatically when a session completes a quest (no CLAIM button). Achievements and podium finishes pay no gems; chests and quests are the gem sources.
-- **Coming soon areas.** Speaking exercises and speaking practice, Super and Unlimited Hearts, gem packs, friends (with Friends Quests and the Friendly and Photogenic achievements), monthly challenges, Mistakes review and Stories in Practice, more courses (French and German), profile editing and sharing, and account sign-in details.
+- **Coming soon areas.** Speaking exercises and speaking practice, Super and Unlimited Hearts, gem packs, friends (with Friends Quests and the Friendly and Photogenic achievements), monthly challenges, Mistakes review and Stories in Practice, more courses (French and German), profile editing and sharing, and password changes.
 - **Text-to-speech depends on the browser's voices.** Speech uses the Web Speech API with a Spanish voice when the device has one. Without a voice, the speaker buttons hide and listening exercises are skipped without penalty.
-- **Ephemeral data on the hosted demo**, protected by the keep-alive and the deploy freeze described in [Deployment](#deployment).
+- **Ephemeral data on the hosted demo.** Accounts live in the same SQLite file as the demo, so a restart or redeploy of the Render service erases them; the keep-alive and the deploy freeze described in [Deployment](#deployment) keep the service running between deploys.
 
 ## Originality
 
@@ -800,11 +857,12 @@ The SQLite file lives on Render's ephemeral disk. It is created and seeded on ev
 │   ├── pyproject.toml              # Ruff and pytest settings
 │   ├── app/
 │   │   ├── main.py                 # app factory: middleware, CORS, problem handlers, routers, startup seed
-│   │   ├── core/                   # settings, the clock, SQLite engine, error codes, column types
+│   │   ├── core/                   # settings, the clock, SQLite engine and schema check, error codes,
+│   │   │                           #   column types, password hashing and tokens
 │   │   ├── domain/                 # pure game rules and every constant (rules.py)
-│   │   ├── models/                 # the 30 tables and their constraints
+│   │   ├── models/                 # the 31 tables and their constraints
 │   │   ├── repositories/           # small typed queries
-│   │   ├── services/               # use cases: sync, sessions, rewards, receipts, shop, leagues, quests, ...
+│   │   ├── services/               # use cases: accounts, sync, sessions, rewards, receipts, shop, leagues, ...
 │   │   ├── schemas/                # Pydantic wire models (camelCase)
 │   │   ├── api/                    # dependencies, middleware, problem documents, v1 routers
 │   │   └── seed/                   # JSON course and catalogue, validators, loader, sample learner, CLI
@@ -812,10 +870,11 @@ The SQLite file lives on Render's ephemeral disk. It is created and seeded on ev
 └── frontend/
     ├── package.json                # exact pins; Node 24
     └── src/
-        ├── app/                    # routes: (main) pages, (lesson)/lesson/[sessionId], welcome, errors
+        ├── app/                    # routes: (main) pages, (lesson)/lesson/[sessionId], (auth)/login and
+        │                           #   signup, welcome, errors
         ├── components/             # ui primitives, icons, illustrations, mascot (all original SVG)
-        ├── features/               # shell, stats, rail, path, lesson, practice, leaderboard, quests,
-        │                           #   shop, profile, settings, guidebook
-        └── lib/                    # API client and types, query hooks, lesson reducer, server clock,
-                                    #   theme, sound, speech
+        ├── features/               # auth, shell, stats, rail, path, lesson, practice, leaderboard,
+        │                           #   quests, shop, profile, settings, guidebook
+        └── lib/                    # API client and types, session token, query hooks, lesson reducer,
+                                    #   server clock, theme, sound, speech
 ```
