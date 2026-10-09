@@ -1,8 +1,10 @@
 """Purchases: buying shop items (with an Idempotency-Key) and reading a purchase back."""
 
+from typing import Annotated
+
 from fastapi import APIRouter, Request, Response, status
 
-from app.api.deps import CtxDep, DbDep, IdempotencyKeyDep
+from app.api.deps import CtxDep, DbDep, IdempotencyKeyDep, id_path
 from app.api.problems import problem_responses
 from app.schemas.shop import PurchaseIn, PurchaseOut
 from app.services import shop_service
@@ -32,19 +34,19 @@ def create_purchase(
     result, created = shop_service.purchase(db, ctx, body.item_code, key)
     db.commit()
     if created:
-        response.headers["Location"] = request.app.url_path_for("get_purchase", purchase_id=result.id)
+        response.headers["Location"] = request.app.url_path_for("get_purchase", purchaseId=result.id)
     else:
         response.status_code = status.HTTP_200_OK
     return result
 
 
 @router.get(
-    "/me/purchases/{purchase_id}",
+    "/me/purchases/{purchaseId}",
     response_model=PurchaseOut,
     operation_id="getPurchase",
     summary="A purchase",
-    responses=problem_responses(403, 404),
+    responses=problem_responses(403, 404, 422),
 )
-def get_purchase(purchase_id: int, db: DbDep, ctx: CtxDep) -> PurchaseOut:
+def get_purchase(purchase_id: Annotated[int, id_path("purchaseId")], db: DbDep, ctx: CtxDep) -> PurchaseOut:
     """One of the learner's purchases, with their current gems and state."""
     return shop_service.get_purchase(db, ctx, purchase_id)

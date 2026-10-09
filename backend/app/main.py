@@ -13,37 +13,43 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.deps import BootInfo
-from app.api.middleware import REQUEST_ID_HEADER, RequestIdMiddleware
+from app.api.middleware import REQUEST_ID_HEADER, BodyLimitMiddleware, RequestIdMiddleware
 from app.api.problems import register_problem_handlers, use_problem_media_type
 from app.api.v1.router import API_V1_PREFIX, OPENAPI_TAGS, api_v1_router
 from app.core.clock import SystemClock
 from app.core.config import Settings, get_settings
-from app.core.db import SessionLocal, engine, ensure_sqlite_dir
+from app.core.db import SessionLocal, engine
 from app.models import Base
 from app.seed.loader import seed_if_empty
+from app.services import reference
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Prepare the database before the first request: create the tables, then seed it if it is empty.
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Prepare the database before the first request: create the tables, seed it if it is empty, and
+    read the course content and catalogues, so the first requests don't pay for that.
 
-    The database is the environment's (the engine in app.core.db). The host's disk is ephemeral, so
-    a boot may well start from no file at all.
+    The database is the environment's (the engine in app.core.db, which also created its folder).
+    The host's disk is ephemeral, so a boot may well start from no file at all.
     """
-    settings = get_settings()
-    ensure_sqlite_dir(settings.database_url)
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
-        seeded_now = seed_if_empty(db, real_now=SystemClock().now(), settings=settings)
+        seeded_now = seed_if_empty(db, real_now=SystemClock().now(), settings=app.state.settings)
         db.commit()
+        reference.warm(db)
     logger.info("database ready (seeded on this boot: %s)", seeded_now)
     yield
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    """Build the application. `settings` default to the environment; tests pass their own."""
+    """Build the application, configured by `settings` (by default, the environment's).
+
+    The same settings govern everything: CORS and logging, the startup seed, and the rules every
+    request reads through the get_settings dependency (dev tools, the X-User-Id header). The
+    database is always app.core.db's engine, set up from DATABASE_URL.
+    """
     if settings is None:
         settings = get_settings()
     _configure_logging(settings)
@@ -58,8 +64,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     # One id per process: production builds a single app per process.
     app.state.boot = BootInfo(id=uuid4().hex, at=SystemClock().now())
+    app.state.settings = settings
+    app.dependency_overrides[get_settings] = lambda: settings
 
-    # Added first, so it runs inside CORSMiddleware and the 500s it builds still get CORS headers.
+    # The last middleware added runs first: CORS, then request ids, then the body limit. Request ids run
+    # inside CORSMiddleware, so the 500s they build still get CORS headers, and the body limit runs
+    # inside request ids, so its problem carries one.
+    app.add_middleware(BodyLimitMiddleware)
     app.add_middleware(RequestIdMiddleware, boot_id=app.state.boot.id)
     app.add_middleware(
         CORSMiddleware,

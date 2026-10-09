@@ -1,4 +1,5 @@
-"""Request dependencies: the database session, the clock, the current learner and the request context.
+"""Request dependencies: the database session, the clock, the current learner and the request context,
+plus the one rule for ids sent in the URL or in a header.
 
 FastAPI resolves each dependency at most once per request and shares the result, which is what
 gives a request exactly one session and one `now`.
@@ -7,9 +8,11 @@ gives a request exactly one session and one `now`.
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import Depends, Header, Request
+from fastapi import Depends, Header, Path, Request, params
+from pydantic import Field, PlainValidator
+from pydantic_core import PydanticCustomError
 from sqlalchemy.orm import Session
 
 from app.core.clock import Clock, OffsetClock, SystemClock
@@ -23,7 +26,43 @@ from app.services import sync_service
 from app.services.context import RequestContext
 
 MAX_IDEMPOTENCY_KEY_LENGTH = 64
-_MAX_ID_DIGITS = 18  # keeps a parsed id inside SQLite's 64-bit integers
+# Ids are SQLite integers, which are 64-bit: no row can have a larger id, and the database driver
+# refuses to even send one. Rows are numbered from 1.
+MAX_ID = 2**63 - 1
+
+
+def parse_id(text: str) -> int | None:
+    """`text` as an id (ASCII digits only, 1 to MAX_ID), or None when it can't be one."""
+    if not (text.isascii() and text.isdigit()) or len(text) > len(str(MAX_ID)):
+        return None
+    value = int(text)
+    return value if 1 <= value <= MAX_ID else None
+
+
+def id_path(name: str) -> params.Path:
+    """An id in the URL under its documented name ("sessionId"). An id out of range is a 422, like
+    any other invalid input, rather than a query the database can't run."""
+    return Path(alias=name, ge=1, le=MAX_ID)
+
+
+def _user_ref(value: object) -> int | Literal["me"]:
+    if value == "me":
+        return "me"
+    user_id = parse_id(value) if isinstance(value, str) else None
+    if user_id is None:
+        raise PydanticCustomError("user_ref", "Input should be a user id or 'me'")
+    return user_id
+
+
+# A profile's user: an id or `me`. One validator reads both forms, so a bad value gets one error.
+UserRef = Annotated[
+    int | Literal["me"],
+    PlainValidator(
+        _user_ref,
+        json_schema_input_type=Annotated[int, Field(ge=1, le=MAX_ID)] | Literal["me"],
+    ),
+    Path(alias="userId", description="A user id, or `me` for the learner."),
+]
 
 
 @dataclass(frozen=True)
@@ -103,7 +142,7 @@ def get_current_user(
 
 
 def _learner_with_id(db: Session, raw_id: str) -> User:
-    user_id = int(raw_id) if raw_id.isdecimal() and len(raw_id) <= _MAX_ID_DIGITS else None
+    user_id = parse_id(raw_id)
     user = None if user_id is None else user_repo.get(db, user_id)
     if user is None:
         raise NotFound("There is no learner with that id.")
@@ -119,16 +158,20 @@ def get_ctx(db: DbDep, user: CurrentUserDep, now: NowDep, settings: SettingsDep)
     """The request context, after catching the learner's state up to `now`.
 
     The catch-up is committed on its own, as the request's first unit of work, so it stands even
-    when the handler then fails (with a 409, say).
+    when the handler then fails (with a 409, say). Another request of the same learner (a second
+    tab) can run and commit in full between that commit and the handler. So everything read so far
+    is expired here: the handler reads the learner's rows again when it first uses them, inside its
+    own transaction, which holds the write lock until the router commits. `now` and `today` stay
+    the request's single instant.
     """
     stats = user.stats
     if stats is None:  # every human learner is created with stats; bots were refused above
         raise RuntimeError(f"learner {user.id} has no stats row")
     sync_service.bring_to_now(db, user, now, settings)
     db.commit()
-    return RequestContext(
-        user=user, stats=stats, now=now, today=local_date(now, user.timezone), settings=settings
-    )
+    today = local_date(now, user.timezone)
+    db.expire_all()
+    return RequestContext(user=user, stats=stats, now=now, today=today, settings=settings)
 
 
 CtxDep = Annotated[RequestContext, Depends(get_ctx)]

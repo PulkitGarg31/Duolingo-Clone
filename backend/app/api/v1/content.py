@@ -3,9 +3,11 @@
 Neither depends on the learner, so neither syncs, and both may be cached for a few minutes.
 """
 
+from typing import Annotated
+
 from fastapi import APIRouter, Response
 
-from app.api.deps import DbDep
+from app.api.deps import DbDep, id_path
 from app.api.problems import problem_responses
 from app.schemas.content import CoursesOut, GuidebookOut
 from app.services import content_service
@@ -23,13 +25,13 @@ def list_courses(response: Response, db: DbDep) -> CoursesOut:
 
 
 @router.get(
-    "/units/{unit_id}/guidebook",
+    "/units/{unitId}/guidebook",
     response_model=GuidebookOut,
     operation_id="getGuidebook",
     summary="A unit's Guidebook",
-    responses=problem_responses(404),
+    responses=problem_responses(404, 422),
 )
-def get_guidebook(unit_id: int, response: Response, db: DbDep) -> GuidebookOut:
+def get_guidebook(unit_id: Annotated[int, id_path("unitId")], response: Response, db: DbDep) -> GuidebookOut:
     """A unit's key phrases and tips."""
     result = content_service.guidebook(db, unit_id)
     response.headers["Cache-Control"] = PUBLIC_CACHE

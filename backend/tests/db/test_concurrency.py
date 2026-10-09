@@ -4,12 +4,19 @@ The lost-update counter shows the mechanism on a bare table. The API races show 
 requests completing the same session, or buying with the same Idempotency-Key, at the same moment,
 still pay exactly once. Should two purchases ever get past the key lookup together, the unique key is
 the backstop and the second one replays the first.
+
+A request commits its catch-up (the sync) before its handler starts, so another tab's request can
+run in between. The handler must therefore read the learner's rows again under its own lock rather
+than reuse what the sync read: the last tests hold a request in that gap while another tab writes.
 """
 
+import itertools
 import threading
 import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from types import ModuleType
+from typing import Any
 from uuid import uuid4
 
 import httpx2
@@ -24,8 +31,19 @@ from app.domain.enums import GemReason
 from app.models import AppState, GemTransaction, Purchase, XpEvent
 from app.repositories import ledger_repo
 from app.repositories.ledger_repo import purchase_by_key
+from app.services import session_service, shop_service
 from tests.conftest import assert_invariants_hold, make_client, running
-from tests.helpers import API, answer_items, buy, get_me, node_at, start_session
+from tests.helpers import (
+    API,
+    answer_for,
+    answer_items,
+    buy,
+    get_me,
+    load_exercises,
+    node_at,
+    start_session,
+    submit,
+)
 
 THREADS = 2
 INCREMENTS_PER_THREAD = 50
@@ -166,3 +184,102 @@ def test_the_unique_key_backstops_a_purchase_that_missed_the_lookup(
     )
     assert len(lookups) == 2  # the insert hit the unique key, and the replay looked again
     assert get_me(tab)["gems"] == 820 - 100
+
+
+# ---- a request held between its sync and its handler ----
+
+
+def hold_first_call(
+    monkeypatch: pytest.MonkeyPatch, module: ModuleType, name: str
+) -> tuple[threading.Event, threading.Event]:
+    """Make the first call to `module.name` wait until released; later calls run straight through.
+
+    The routers call their service after the request's dependencies have run, so a request held
+    here has committed its sync and not started its handler: exactly the gap another tab can use.
+    Returns (held, release): `held` is set once the request waits, `release` lets it go on.
+    """
+    held, release = threading.Event(), threading.Event()
+    real = getattr(module, name)
+    calls = itertools.count()
+
+    def first_call_waits(*args: Any, **kwargs: Any) -> Any:
+        if next(calls) == 0:
+            held.set()
+            assert release.wait(10), "the held request was never released"
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(module, name, first_call_waits)
+    return held, release
+
+
+def run_while_held(
+    held: threading.Event,
+    release: threading.Event,
+    held_call: Callable[[], httpx2.Response],
+    meanwhile: Callable[[], httpx2.Response],
+) -> tuple[httpx2.Response, httpx2.Response]:
+    """Start `held_call`, run `meanwhile` in full while it is held, then release it.
+
+    Returns (the held request's response, the other request's response).
+    """
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(held_call)
+        assert held.wait(10), "the request never reached its handler"
+        try:
+            other = meanwhile()
+        finally:
+            release.set()
+        return pending.result(timeout=10), other
+
+
+def test_a_purchase_held_after_its_sync_sees_the_gems_another_tab_spent(
+    clients: tuple[TestClient, TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, other_tab = clients
+    held, release = hold_first_call(monkeypatch, shop_service, "purchase")
+
+    freeze, boost = run_while_held(
+        held, release, lambda: buy(tab, "streak_freeze"), lambda: buy(other_tab, "xp_boost_15")
+    )
+
+    assert (freeze.status_code, boost.status_code) == (201, 201)
+    assert freeze.json()["gems"] == 820 - 100 - 200  # debited from the balance the boost left
+    assert get_me(tab)["gems"] == 820 - 100 - 200  # and the ledger agrees (invariant I1, at teardown)
+
+
+def test_a_wrong_answer_held_after_its_sync_spends_a_heart_of_a_refill_bought_meanwhile(
+    clients: tuple[TestClient, TestClient], seeded_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, other_tab = clients
+    session = start_session(tab, {"kind": "lesson", "nodeId": node_at(tab, 2, 2)})
+    item = session["items"][0]
+    exercise = load_exercises(seeded_engine, [item["exercise"]["id"]])[item["exercise"]["id"]]
+    held, release = hold_first_call(monkeypatch, session_service, "answer")
+
+    answered, refill = run_while_held(
+        held,
+        release,
+        lambda: submit(tab, session["id"], item["id"], answer_for(exercise, correct=False)),
+        lambda: buy(other_tab, "heart_refill"),
+    )
+
+    assert (refill.status_code, answered.status_code) == (201, 200), answered.text
+    assert answered.json()["hearts"]["current"] == 4  # the refill's five, minus this answer's heart
+    assert get_me(tab)["hearts"]["current"] == 4
+
+
+def test_a_completion_held_after_its_sync_replays_with_the_learner_as_they_are_now(
+    clients: tuple[TestClient, TestClient], seeded_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tab, other_tab = clients
+    session = start_session(tab, {"kind": "lesson", "nodeId": node_at(tab, 2, 2)})
+    answer_items(tab, seeded_engine, session)
+    path = f"{API}/sessions/{session['id']}/complete"
+    held, release = hold_first_call(monkeypatch, session_service, "complete")
+
+    replay, first = run_while_held(held, release, lambda: tab.post(path), lambda: other_tab.post(path))
+
+    assert (first.status_code, replay.status_code) == (200, 200)
+    assert (first.json()["replayed"], replay.json()["replayed"]) == (False, True)
+    assert replay.json()["me"]["streak"]["current"] == 14  # the completion the other tab made counts
+    assert replay.json()["me"] == first.json()["me"]

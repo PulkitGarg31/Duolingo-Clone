@@ -14,10 +14,20 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
-from app.core.errors import AppError, InternalError, MethodNotAllowed, NotFound, ValidationFailed
+from app.core.errors import (
+    AppError,
+    BodyTooLarge,
+    InternalError,
+    MethodNotAllowed,
+    NotFound,
+    ValidationFailed,
+)
 from app.schemas.problems import FieldError, ProblemDetails
 
 PROBLEM_JSON = "application/problem+json"
+# A validation problem lists at most this many field errors. A body with thousands of bad values
+# would otherwise get a response many times its own size.
+MAX_FIELD_ERRORS = 20
 
 logger = logging.getLogger(__name__)
 
@@ -109,15 +119,15 @@ async def _validation_error(request: Request, exc: RequestValidationError) -> JS
         FieldError(
             field=".".join(str(part) for part in error["loc"]), message=error["msg"], kind=error["type"]
         )
-        for error in exc.errors()
+        for error in exc.errors()[:MAX_FIELD_ERRORS]
     ]
     return _render(request, ValidationFailed(), errors=errors)
 
 
-# Routing raises 404 for an unknown path and 405 for a wrong method. The only other client error
-# raised here is 400 for a request body that cannot be read, which the contract reports as a
-# validation error.
-_HTTP_ERRORS: dict[int, type[AppError]] = {404: NotFound, 405: MethodNotAllowed}
+# Routing raises 404 for an unknown path and 405 for a wrong method, and BodyLimitMiddleware raises
+# 413 for a streamed body past the limit. The only other client error raised here is 400 for a
+# request body that cannot be read. The contract reports both of the last two as validation errors.
+_HTTP_ERRORS: dict[int, type[AppError]] = {404: NotFound, 405: MethodNotAllowed, 413: BodyTooLarge}
 
 
 async def _http_error(request: Request, exc: HTTPException) -> JSONResponse:

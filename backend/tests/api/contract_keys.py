@@ -6,6 +6,8 @@ The Pydantic schema with the same name must declare exactly these fields, under 
 The union types are recorded by their allowed values.
 """
 
+from typing import Any
+
 
 def names(text: str) -> frozenset[str]:
     """The space-separated names in `text`, as a set."""
@@ -277,21 +279,21 @@ ENDPOINTS: dict[str, tuple[str, str, str]] = {
     "updateSettings": ("PATCH", "/me/settings", "SettingsUpdateOut"),
     "getActivity": ("GET", "/me/activity", "ActivityOut"),
     "getPath": ("GET", "/me/path", "PathOut"),
-    "claimChest": ("POST", "/me/chests/{node_id}/claim", "ChestClaimOut"),
+    "claimChest": ("POST", "/me/chests/{nodeId}/claim", "ChestClaimOut"),
     "getLeague": ("GET", "/me/league", "LeagueOut"),
-    "ackLeagueResult": ("POST", "/me/league/results/{membership_id}/ack", "LeagueAckOut"),
+    "ackLeagueResult": ("POST", "/me/league/results/{membershipId}/ack", "LeagueAckOut"),
     "getQuests": ("GET", "/me/quests", "QuestsOut"),
     "createPurchase": ("POST", "/me/purchases", "PurchaseOut"),
-    "getPurchase": ("GET", "/me/purchases/{purchase_id}", "PurchaseOut"),
-    "getProfile": ("GET", "/users/{user_id}/profile", "ProfileOut"),
+    "getPurchase": ("GET", "/me/purchases/{purchaseId}", "PurchaseOut"),
+    "getProfile": ("GET", "/users/{userId}/profile", "ProfileOut"),
     "listCourses": ("GET", "/courses", "CoursesOut"),
-    "getGuidebook": ("GET", "/units/{unit_id}/guidebook", "GuidebookOut"),
+    "getGuidebook": ("GET", "/units/{unitId}/guidebook", "GuidebookOut"),
     "listShopItems": ("GET", "/shop/items", "ShopOut"),
     "startSession": ("POST", "/sessions", "SessionOut"),
-    "getSession": ("GET", "/sessions/{session_id}", "SessionOut"),
-    "submitAnswer": ("PUT", "/sessions/{session_id}/items/{item_id}/answer", "AnswerResultOut"),
-    "completeSession": ("POST", "/sessions/{session_id}/complete", "CompletionOut"),
-    "quitSession": ("POST", "/sessions/{session_id}/quit", "QuitOut"),
+    "getSession": ("GET", "/sessions/{sessionId}", "SessionOut"),
+    "submitAnswer": ("PUT", "/sessions/{sessionId}/items/{itemId}/answer", "AnswerResultOut"),
+    "completeSession": ("POST", "/sessions/{sessionId}/complete", "CompletionOut"),
+    "quitSession": ("POST", "/sessions/{sessionId}/quit", "QuitOut"),
     "getDevClock": ("GET", "/dev/clock", "ClockOut"),
     "advanceDevClock": ("POST", "/dev/clock/advance", "ClockChangeOut"),
     "devNextDay": ("POST", "/dev/clock/next-day", "ClockChangeOut"),
@@ -362,4 +364,89 @@ UNION_VALUES: dict[str, frozenset[str] | frozenset[int]] = {
         " SESSION_EXPIRED SESSION_INCOMPLETE ITEM_OUT_OF_ORDER ITEM_ALREADY_ANSWERED"
         " LEAGUE_RESULT_NOT_READY INTERNAL_ERROR"
     ),
+}
+
+
+# GET /me for the seeded demo, as documented for the frontend.
+ME_EXAMPLE: dict[str, Any] = {
+    "user": {
+        "id": 1,
+        "username": "alex",
+        "displayName": "Alex",
+        "avatarColor": "#1CB0F6",
+        "timezone": "Asia/Kolkata",
+        "timezoneConfirmed": True,
+        "joinedAt": "2026-09-08T06:30:00Z",
+    },
+    "course": {
+        "id": 1,
+        "slug": "es-en",
+        "title": "Spanish",
+        "learningLanguage": "es",
+        "fromLanguage": "en",
+        "ttsLocale": "es-ES",
+        "flagKey": "es",
+        "isPublished": True,
+    },
+    "serverNow": "2026-10-08T12:00:00Z",
+    "localDate": "2026-10-08",
+    "xp": {"total": 373, "today": 0, "thisWeek": 42},
+    "gems": 820,
+    "hearts": {
+        "current": 4,
+        "max": 5,
+        "nextHeartAt": "2026-10-08T16:00:00Z",
+        "fullAt": "2026-10-08T16:00:00Z",
+        "regenIntervalSeconds": 18000,
+        "refillPriceGems": 350,
+    },
+    "streak": {
+        "current": 13,
+        "longest": 13,
+        "status": "at_risk",
+        "extendedToday": False,
+        "frozenYesterday": False,
+        "freezesEquipped": 1,
+        "maxFreezes": 2,
+        "nextMilestone": 14,
+    },
+    "dailyGoal": {"goalXp": 20, "earnedXp": 0, "met": False},
+    "league": {
+        "unlocked": True,
+        "lessonsToUnlock": 0,
+        "tier": 2,
+        "name": "Silver",
+        "color": "#C9D6E2",
+        "joinedThisWeek": True,
+        "rank": 17,
+        "weeklyXp": 42,
+        "zone": "safe",
+        "xpToPassNext": 9,
+        "cohortSize": 30,
+        "promoteCount": 15,
+        "demoteCount": 7,
+        "weekEndsAt": "2026-10-12T00:00:00Z",
+    },
+    "xpBoost": {"active": False, "endsAt": None, "multiplier": 2},
+    "activeSession": None,
+    "pendingLeagueResult": {
+        "membershipId": 31,
+        "weekStart": "2026-09-28",
+        "league": {"tier": 1, "name": "Bronze", "color": "#D4A880"},
+        "finalRank": 6,
+        "finalXp": 112,
+        "outcome": "promoted",
+        "newLeague": {"tier": 2, "name": "Silver", "color": "#C9D6E2"},
+        "seen": False,
+    },
+    "settings": {
+        "dailyGoalXp": 20,
+        "theme": "system",
+        "soundEffects": True,
+        "animations": True,
+        "motivationalMessages": True,
+        "listeningExercises": True,
+        "timezone": "Asia/Kolkata",
+    },
+    "dev": {"enabled": True, "clockOffsetSeconds": 0},
 }

@@ -94,9 +94,9 @@ def use_database(app: FastAPI, engine: Engine, clock: FrozenClock) -> None:
     }
 
 
-def fresh_app() -> FastAPI:
+def fresh_app(settings: Settings | None = None) -> FastAPI:
     """A fresh application whose startup is left to the fixtures; point it at a database first."""
-    app = create_app(api_settings("sqlite://"))
+    app = create_app(settings or api_settings("sqlite://"))
     app.router.lifespan_context = _no_startup
     return app
 

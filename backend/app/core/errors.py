@@ -262,6 +262,12 @@ class ValidationFailed(Unprocessable):
     default_detail = "Some fields are missing or invalid."
 
 
+class BodyTooLarge(ValidationFailed):
+    """The request body is far larger than any request of this API, so it is refused unread."""
+
+    default_detail = "The request body is too large."
+
+
 class InvalidAnswer(Unprocessable):
     code = ErrorCode.INVALID_ANSWER
     title = "Invalid answer"

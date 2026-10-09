@@ -179,7 +179,8 @@ class MatchPairIn(ApiModel):
 
 
 class MatchPairsAnswer(ApiModel):
-    """The final matching; `mistakes` counts the red taps along the way (stats only, no heart)."""
+    """The final matching. `mistakes` counts the red taps along the way: it is kept with the stored
+    answer as a record, but neither grading nor any statistic uses it, and it costs no heart."""
 
     type: Literal["match_pairs"]
     pairs: list[MatchPairIn]
@@ -230,7 +231,11 @@ class SessionStateOut(ApiModel):
 
 
 class AnswerResultOut(ApiModel):
-    """The grade of one answer, for the feedback bar. A replay returns it unchanged."""
+    """The grade of one answer, for the feedback bar, and the session after it.
+
+    A replay (the same answer sent again) repeats the verdict: result, note, correctAnswer, meaning,
+    heartLost and appendedItem. Hearts, progress, combos and `session` show the session as it is now.
+    """
 
     item_id: int
     replayed: bool
