@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from app import main
@@ -42,6 +43,17 @@ def test_health_reports_the_seeded_demo_and_the_boot_id(client: TestClient) -> N
     assert (body["status"], body["seeded"], body["serverTime"]) == ("ok", True, "2026-10-08T12:00:00Z")
     assert re.fullmatch(r"[0-9a-f]{32}", body["bootId"])
     assert response.headers["x-boot-id"] == body["bootId"]
+
+
+def test_health_answers_while_another_request_holds_the_write_lock(
+    client: TestClient, seeded_engine: Engine
+) -> None:
+    # A failing health check makes the host restart the service, which erases the demo database.
+    with seeded_engine.connect() as writer:
+        writer.exec_driver_sql("UPDATE app_state SET seed_version = seed_version")  # BEGIN IMMEDIATE
+        response = client.get(f"{API}/health")
+        writer.rollback()
+    assert (response.status_code, response.json()["seeded"]) == (200, True)
 
 
 def test_the_real_startup_builds_and_seeds_an_empty_database(

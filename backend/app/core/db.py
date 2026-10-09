@@ -1,7 +1,8 @@
 """SQLite engine and session factory, tuned for one serialized writer.
 
 Every connection turns on foreign keys, WAL and a busy timeout. Every transaction starts with
-BEGIN IMMEDIATE, which takes the write lock up front. GET requests write during the lazy sync and
+BEGIN IMMEDIATE, which takes the write lock up front (only a transaction marked READ_ONLY, such as the
+health check's, skips it). GET requests write during the lazy sync and
 a page fires several queries at once. With deferred transactions, two requests can both start
 reading and then one of them fails to upgrade to the write lock ("database is locked", which no
 busy timeout fixes). Taking the lock at BEGIN makes the requests queue instead.
@@ -49,8 +50,16 @@ def _on_connect(dbapi_connection: sqlite3.Connection, _record: ConnectionPoolEnt
     cursor.close()
 
 
+READ_ONLY = "read_only"
+"""Execution option for a transaction that only reads: it starts with a plain (deferred) BEGIN, so it
+never waits for the write lock. With WAL it reads a consistent snapshot beside the writer."""
+
+
 def _on_begin(connection: Connection) -> None:
-    connection.exec_driver_sql("BEGIN IMMEDIATE")
+    if connection.get_execution_options().get(READ_ONLY):
+        connection.exec_driver_sql("BEGIN")
+    else:
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
 
 
 def make_engine(database_url: str) -> Engine:

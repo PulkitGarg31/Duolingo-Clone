@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import Clock, OffsetClock, SystemClock
 from app.core.config import Settings, get_settings
-from app.core.db import SessionLocal
+from app.core.db import READ_ONLY, SessionLocal
 from app.core.errors import BotAccount, DevToolsDisabled, IdempotencyKeyRequired, NotFound
 from app.domain.calendar import local_date
 from app.models import User
@@ -126,7 +126,12 @@ BootDep = Annotated[BootInfo, Depends(get_boot)]
 
 
 def is_seeded(db: DbDep) -> bool:
-    """Whether the database holds the demo data; seeding writes the app_state row."""
+    """Whether the database holds the demo data; seeding writes the app_state row.
+
+    The read takes no write lock, so the health check answers at once while a long write holds it:
+    a health check stuck behind the lock could make the host restart the service and erase its data.
+    """
+    db.connection(execution_options={READ_ONLY: True})
     return system_repo.get_state(db) is not None
 
 
