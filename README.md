@@ -2,8 +2,8 @@
 
 owlingo is a working clone of the Duolingo web app for English speakers learning Spanish. A learner follows a path of units and skills, plays lessons built from five kinds of exercises, earns XP and keeps a daily streak, loses and regains hearts, spends (mocked) gems in a shop, climbs weekly leagues against seeded competitors and collects achievements. The FastAPI backend owns every game rule (grading, hearts, streaks, XP, unlocks, leagues) on a carefully constrained SQLite schema. The Next.js frontend renders that state with Duolingo-style visuals, original SVG art, synthesized sound effects and browser text-to-speech. A built-in demo clock lets anyone jump to tomorrow or to the end of the league week and watch the rules react.
 
-- **Live demo:** `<add after deployment>`
-- **API docs (Swagger UI):** `<add after deployment>/api/v1/docs`
+- **Live demo:** https://owlingo.vercel.app
+- **API docs (Swagger UI):** https://owlingo-api.onrender.com/api/v1/docs
 - **Engineering deep dive:** [docs/DESIGN.md](docs/DESIGN.md)
 
 > The API runs on Render's free tier, which sleeps when idle. If it was asleep, the first load shows a wake-up screen for up to a minute while the server boots and re-seeds the demo.
@@ -27,20 +27,20 @@ owlingo is a working clone of the Duolingo web app for English speakers learning
 
 ## Screenshots
 
-Screenshots will be added to `docs/screenshots/` after deployment:
-
-- [ ] Learning path with a node popover (desktop, light): `docs/screenshots/learn.png`
-- [ ] Lesson: word bank exercise and the feedback bar: `docs/screenshots/lesson-feedback.png`
-- [ ] Lesson complete with the three stat cards: `docs/screenshots/lesson-complete.png`
-- [ ] Streak extended celebration: `docs/screenshots/streak.png`
-- [ ] Out of hearts modal: `docs/screenshots/out-of-hearts.png`
-- [ ] Leaderboard with promotion and demotion zones: `docs/screenshots/leaderboard.png`
-- [ ] Profile with stats and achievements: `docs/screenshots/profile.png`
-- [ ] Daily quests and the shop: `docs/screenshots/quests-shop.png`
-- [ ] Settings with the Demo tools: `docs/screenshots/demo-tools.png`
-- [ ] Dark mode: `docs/screenshots/dark.png`
-- [ ] Phone layout (375 px): `docs/screenshots/mobile.png`
-- [ ] Wake-up screen while the API boots: `docs/screenshots/wake.png`
+| | |
+|---|---|
+| ![Learning path with a node popover](docs/screenshots/learn.png) | ![Word-bank exercise with the feedback bar](docs/screenshots/lesson-feedback.png) |
+| Learning path with a node popover | Word-bank exercise and the feedback bar |
+| ![Lesson complete with three stat cards](docs/screenshots/lesson-complete.png) | ![Streak extended celebration](docs/screenshots/streak.png) |
+| Lesson complete | Streak extended |
+| ![Out of hearts modal](docs/screenshots/out-of-hearts.png) | ![Silver League leaderboard](docs/screenshots/leaderboard.png) |
+| Out of hearts | Weekly league with seeded competitors |
+| ![Profile with statistics](docs/screenshots/profile.png) | ![Daily quests](docs/screenshots/quests.png) |
+| Profile | Daily quests |
+| ![Shop](docs/screenshots/shop.png) | ![Settings with the Demo tools](docs/screenshots/demo-tools.png) |
+| Shop with mocked gems | Demo tools for simulated time |
+| ![Dark mode](docs/screenshots/dark.png) | ![Phone layout](docs/screenshots/mobile.png) |
+| Dark mode | Phone layout (375 px) |
 
 ## Features
 
