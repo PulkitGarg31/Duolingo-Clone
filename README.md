@@ -756,7 +756,7 @@ The build never calls the API, so a sleeping backend cannot break a frontend dep
 The SQLite file lives on Render's ephemeral disk. It is created and seeded on every boot, so a **redeploy, a restart, or a spin-down after about 15 idle minutes** brings back a fresh demo. The app notices the new `X-Boot-Id` and tells the learner "The demo server restarted, so progress was reset".
 
 - **Built-in keep-alive.** While the app is open in a browser it pings `/api/v1/health` every 4 minutes, so a reviewer who pauses does not lose their progress.
-- **Optional external pinger.** To keep the server warm with no tab open, point a free uptime monitor (for example UptimeRobot or cron-job.org) at `https://<your-render-service>.onrender.com/api/v1/health` every 5 to 10 minutes. `/health` never writes, so pings cost nothing in state, and one always-on free service fits within Render's monthly free hours.
+- **Scheduled keep-alive.** `.github/workflows/keep-alive.yml` requests `/api/v1/health` every 5 minutes, so the server stays up even with no tab open (set the repository variable `API_URL` if the backend URL differs). GitHub may delay scheduled runs at busy times, so for extra safety a free uptime monitor (for example UptimeRobot or cron-job.org) can ping the same URL. `/health` never writes, so pings cost nothing in state, and one always-on free service fits within Render's monthly free hours.
 - **Avoid redeploys during review.** `autoDeploy: true` redeploys (and re-seeds) on every push to the default branch: stop pushing once the link is shared, or set `autoDeploy: false`.
 
 ## Assumptions and deviations

@@ -1,0 +1,21 @@
+name: Keep API awake
+
+# Render's free plan stops a web service after 15 minutes without traffic, and the
+# restart re-seeds the demo database. A light request every few minutes keeps it running.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the health endpoint
+        env:
+          API_URL: ${{ vars.API_URL || 'https://owlingo-api.onrender.com' }}
+        run: |
+          curl --fail --silent --show-error --max-time 90 \
+               --retry 3 --retry-delay 15 --retry-all-errors \
+               "$API_URL/api/v1/health"
