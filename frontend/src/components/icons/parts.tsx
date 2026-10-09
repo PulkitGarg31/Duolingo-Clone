@@ -1,7 +1,7 @@
 /** Drawing pieces reused by several icons. They render SVG children, never an <svg> of their own. */
 import { useId, type ReactNode } from "react";
 import { polygonPath, regularPolygon, roundedPolygon, starPoints } from "./geometry";
-import { ART, GREY, HIGHLIGHT } from "./palette";
+import { ART, GREY, HIGHLIGHT, shade } from "./palette";
 import { HEART } from "./shapes";
 
 interface HeartArtProps {
@@ -89,49 +89,76 @@ export function Sparkle({ cx, cy, r, color }: { cx: number; cy: number; r: numbe
 export type ChestVariant = "closed" | "open" | "locked";
 
 const CHEST_COLOURS = {
-  wood: { wood: ART.wood, woodLip: ART.woodLip, band: ART.bee, bandLip: ART.camel, keyhole: ART.eel },
+  wood: {
+    wood: ART.wood,
+    woodLip: ART.woodLip,
+    // The shadowed inside of the box and of its lid.
+    inside: shade(ART.woodLip, 0.72),
+    band: ART.bee,
+    bandLip: ART.camel,
+    keyhole: ART.eel,
+  },
   // The keyhole takes the lip grey: hare would vanish against the dark theme's koala latch.
-  grey: { wood: GREY.base, woodLip: GREY.lip, band: GREY.mid, bandLip: GREY.lip, keyhole: GREY.lip },
+  grey: { wood: GREY.base, woodLip: GREY.lip, inside: GREY.lip, band: GREY.mid, bandLip: GREY.lip, keyhole: GREY.lip },
 };
 
+const CHEST_BODY = { x: 4, y: 14, width: 24, height: 14, rx: 2.4 } as const;
 const CHEST_LID = "M4 15V11.6C4 7.4 9.4 4.6 16 4.6C22.6 4.6 28 7.4 28 11.6V15Z";
-// Thrown back, the lid shows only its dark underside inside a wooden rim; its hinge edge hides behind the body.
-const CHEST_LID_OPEN = "M5.4 15 6.8 6.2C7 5 7.9 4.2 9.1 4.2H22.9C24.1 4.2 25 5 25.2 6.2L26.6 15Z";
-const CHEST_LID_OPEN_INSIDE = "M7.8 15 8.8 7.6C8.9 7 9.4 6.6 10 6.6H22C22.6 6.6 23.1 7 23.2 7.6L24.2 15Z";
+// Thrown back past upright, the lid narrows away from the viewer and shows its dark underside inside a wooden
+// rim; its hinge edge hides behind the open top of the box.
+const CHEST_LID_OPEN = "M5.6 14 6.9 5.4C7.1 4.2 8 3.4 9.2 3.4H22.8C24 3.4 24.9 4.2 25.1 5.4L26.4 14Z";
+const CHEST_LID_OPEN_INSIDE = "M8 14 8.9 6.9C9 6.3 9.5 5.9 10.1 5.9H21.9C22.5 5.9 23 6.3 23.1 6.9L24 14Z";
 const CHEST_BODY_BOTTOM = "M4 24.6H28V25.6A2.4 2.4 0 0 1 25.6 28H6.4A2.4 2.4 0 0 1 4 25.6Z";
 
 /**
- * A treasure chest seen from the front on the 32-unit grid: wood with two gold bands and a gold latch.
- * `contents` (an open chest's gems) are drawn between the lid and the body.
+ * A treasure chest seen from the front on the 32-unit grid: wood with two gold bands and a gold latch. Open,
+ * its lid stands thrown back above the dark inside of the box; `contents` (gems) are drawn in that opening,
+ * where the front of the box hides their lower part.
  */
 export function ChestArt({ variant, contents }: { variant: ChestVariant; contents?: ReactNode }) {
   const clip = useId();
   const c = variant === "locked" ? CHEST_COLOURS.grey : CHEST_COLOURS.wood;
   const open = variant === "open";
-  const lid = open ? CHEST_LID_OPEN : CHEST_LID;
   return (
     <>
       <defs>
+        {/* The bands run over the body and a closed lid; an open lid shows only their ends, on its far rim. */}
         <clipPath id={clip}>
-          <rect x={4} y={14} width={24} height={14} rx={2.4} />
-          <path d={lid} />
+          <rect {...CHEST_BODY} />
+          {open ? null : <path d={CHEST_LID} />}
         </clipPath>
+        {open ? (
+          <clipPath id={`${clip}-lid`}>
+            <path d={CHEST_LID_OPEN} />
+          </clipPath>
+        ) : null}
       </defs>
-      <path d={lid} fill={c.wood} />
-      {open ? <path d={CHEST_LID_OPEN_INSIDE} fill={c.woodLip} /> : null}
+      {open ? (
+        <>
+          <path d={CHEST_LID_OPEN} fill={c.wood} />
+          <path d={CHEST_LID_OPEN_INSIDE} fill={c.inside} />
+          <g clipPath={`url(#${clip}-lid)`}>
+            <rect x={8.6} y={3.4} width={3.2} height={2.5} fill={c.band} />
+            <rect x={20.2} y={3.4} width={3.2} height={2.5} fill={c.band} />
+          </g>
+          {/* the open top of the box */}
+          <rect x={4.6} y={11.4} width={22.8} height={3.6} rx={1.4} fill={c.inside} />
+        </>
+      ) : (
+        <path d={CHEST_LID} fill={c.wood} />
+      )}
       {contents}
-      <rect x={4} y={14} width={24} height={14} rx={2.4} fill={c.wood} />
+      <rect {...CHEST_BODY} fill={c.wood} />
       <path d={CHEST_BODY_BOTTOM} fill={c.woodLip} />
-      {/* the seam under the lid, deeper on an open chest where it is the dark inside */}
-      <rect x={4} y={14} width={24} height={open ? 3 : 2.2} fill={c.woodLip} />
-      {/* the bands run over lid and body, clipped to their outline */}
+      {/* the seam under a closed lid; on an open chest, the shaded top edge of the front */}
+      <rect x={4} y={14} width={24} height={open ? 1.6 : 2.2} fill={c.woodLip} />
       <g clipPath={`url(#${clip})`}>
         <rect x={8} width={3.2} height={32} fill={c.band} />
         <rect x={20.8} width={3.2} height={32} fill={c.band} />
         <rect x={8} y={24.6} width={3.2} height={4} fill={c.bandLip} />
         <rect x={20.8} y={24.6} width={3.2} height={4} fill={c.bandLip} />
       </g>
-      <g transform={open ? "translate(0 3)" : undefined}>
+      <g transform={open ? "translate(0 4)" : undefined}>
         <rect x={13} y={12} width={6} height={7.6} rx={1.6} fill={c.band} />
         <path d="M13 17H19V18A1.6 1.6 0 0 1 17.4 19.6H14.6A1.6 1.6 0 0 1 13 18Z" fill={c.bandLip} />
         <circle cx={16} cy={14.8} r={1.3} fill={c.keyhole} />

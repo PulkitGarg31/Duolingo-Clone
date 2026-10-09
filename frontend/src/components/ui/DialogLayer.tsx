@@ -2,12 +2,16 @@
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion, useDragControls, type PanInfo } from "motion/react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { hasRecentInput } from "./inputRecency";
 import { EASE_IN, EASE_OUT, EASE_SPRING, useFadeSeconds } from "./transitions";
 
-/** Where the panel sits: a centred card, a sheet rising from the bottom, or one dropping from under the top bar. */
-export type DialogPlacement = "center" | "bottom" | "top";
+/**
+ * Where the panel sits: a centred card, a sheet rising from the bottom, one dropping from under the top bar, or
+ * a sheet covering the whole screen.
+ */
+export type DialogPlacement = "center" | "bottom" | "top" | "full";
 
 /** A swipe closes the sheet once it travels this far or flicks this fast; shorter swipes spring back. */
 const SWIPE_CLOSE_DISTANCE_PX = 100;
@@ -34,6 +38,7 @@ function panelMotion(placement: DialogPlacement, fade: Fade) {
         exit: { opacity: 0, scale: 0.95, transition: { duration: fade(0.15), ease: EASE_IN } },
       };
     case "bottom":
+    case "full":
       return {
         initial: { y: "100%" },
         animate: { y: 0, transition: { duration: 0.25, ease: EASE_OUT } },
@@ -52,6 +57,7 @@ function panelMotion(placement: DialogPlacement, fade: Fade) {
 const FRAME_CLASSES: Record<DialogPlacement, string> = {
   center: "top-0 items-center p-6",
   bottom: "top-0 items-end",
+  full: "top-0 items-end",
   // Clipped at the top bar's edge, so the sheet appears to slide out from under it.
   top: "top-(--topbar-h) items-start overflow-hidden",
 };
@@ -60,8 +66,39 @@ const PANEL_CLASSES: Record<DialogPlacement, string> = {
   center: "max-h-[calc(100dvh-48px)] rounded-lg p-6 xl:p-[30px]",
   bottom:
     "max-h-[calc(100dvh-24px)] w-full rounded-t-lg px-4 pt-6 pb-[calc(24px+env(safe-area-inset-bottom))] shadow-(--shadow-sheet)",
+  // Edge to edge, a flex column so the content can pin its buttons to the bottom; it scrolls when too tall, and
+  // its padding keeps clear of the notch and the home indicator.
+  full: "flex h-dvh w-full flex-col px-4 pt-[calc(24px+env(safe-area-inset-top))] pb-[calc(24px+env(safe-area-inset-bottom))]",
   top: "max-h-[calc(100dvh-var(--topbar-h))] w-full rounded-b-lg border-b-2 border-line px-4 py-6",
 };
+
+/** What Tab can reach inside the panel; the panel itself takes focus from script only. */
+const TABBABLE =
+  "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])";
+
+/**
+ * Called as the panel mounts, after any `autoFocus` control inside it has taken focus. A dialog the learner just
+ * opened keeps that focus (or gets Radix's: the first control). One that opened on its own (on page load, or
+ * when data arrived) moves focus to the panel instead: browsers ring a button that script focuses before any
+ * input, and nobody asked for that button. Tab still goes straight to the first control.
+ */
+function focusPanelIfUnasked(panel: HTMLDivElement | null) {
+  if (panel && !hasRecentInput()) panel.focus({ preventScroll: true });
+}
+
+/** From the panel itself, Shift+Tab would leave the dialog; it wraps round to the last control instead. */
+function wrapShiftTabFromPanel(event: KeyboardEvent<HTMLDivElement>) {
+  if (event.key !== "Tab" || !event.shiftKey || event.target !== event.currentTarget) return;
+  const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(TABBABLE)).reverse();
+  // The last control that can actually take focus: hidden ones refuse it.
+  for (const control of controls) {
+    control.focus();
+    if (document.activeElement === control) {
+      event.preventDefault();
+      return;
+    }
+  }
+}
 
 interface DialogLayerProps {
   open: boolean;
@@ -79,7 +116,8 @@ interface DialogLayerProps {
 /**
  * The machinery shared by Modal and Sheet. Radix Dialog supplies the focus trap, Esc, outside clicks, scroll
  * locking and aria wiring; Motion animates the scrim and the panel in and out. Radix is force-mounted inside
- * `AnimatePresence`, so the panel stays mounted until its exit animation has finished.
+ * `AnimatePresence`, so the panel stays mounted until its exit animation has finished. A dialog that opens
+ * without the learner's doing starts with focus on its panel rather than on a button.
  */
 export function DialogLayer({ open, onOpenChange, placement, dismissible = true, handle = false, style, children }: DialogLayerProps) {
   const dragControls = useDragControls();
@@ -108,6 +146,8 @@ export function DialogLayer({ open, onOpenChange, placement, dismissible = true,
             <div className={cn("pointer-events-none fixed inset-x-0 bottom-0 z-(--z-modal) flex justify-center", FRAME_CLASSES[placement])}>
               <DialogPrimitive.Content forceMount asChild onEscapeKeyDown={keepOpen} onPointerDownOutside={keepOpen}>
                 <motion.div
+                  ref={focusPanelIfUnasked}
+                  onKeyDown={wrapShiftTabFromPanel}
                   {...panelMotion(placement, fade)}
                   drag={swipeable ? "y" : false}
                   dragListener={false}

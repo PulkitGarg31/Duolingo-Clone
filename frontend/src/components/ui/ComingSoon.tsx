@@ -53,7 +53,7 @@ export function ComingSoonPage({ feature, title, className }: ComingSoonPageProp
   return (
     <section className={cn("mx-auto flex max-w-[420px] flex-col items-center px-4 py-12 text-center", className)}>
       <Owl pose="build" size={200} />
-      <h1 className="mt-6 text-[1.5rem] leading-[1.875rem] font-extrabold text-fg-strong md:text-title-lg">{heading}</h1>
+      <h1 className="mt-6 text-[1.5rem]/[1.875rem] font-extrabold text-fg-strong md:text-title-lg">{heading}</h1>
       <p className="mt-3 text-body text-fg-2">{`We're still building ${feature}. Check back later!`}</p>
       <ButtonLink href="/learn" variant="secondary" className="mt-8">
         Back to learning

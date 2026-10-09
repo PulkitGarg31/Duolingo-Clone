@@ -16,6 +16,10 @@ const TONE_CLASSES: Record<ProgressTone, string> = {
   quest: "bg-quest",
 };
 
+/** One copy of the label: centred across the whole track, from its left edge. */
+const LABEL_COPY =
+  "absolute inset-y-0 left-0 flex items-center justify-center text-[14px] leading-[18px] font-extrabold tabular-nums";
+
 interface ProgressBarProps {
   /** Progress from 0 to 1; values outside are clamped. */
   value: number;
@@ -32,6 +36,11 @@ interface ProgressBarProps {
  * A rounded track with a gloss stripe inside the fill. Once there is any progress the fill is at least
  * 1.5 × the height wide, so its rounded end never collapses into a sliver. Width and colour changes are
  * animated by the global `.progress-fill` transition.
+ *
+ * The label is drawn twice so it reads on both sides of the fill's edge. One copy lies on the track, under the
+ * fill, in the track's ink: the quest ink, or the secondary text colour on the dark theme's dark track. The
+ * other rides inside the fill in the quest ink, clipped to the fill's shape even while it grows. The copies
+ * line up because both span the track: the bar is a size container and the inner copy is `100cqw` wide.
  */
 export function ProgressBar({ value, tone = "fill", height = 16, label, className, "aria-label": ariaLabel }: ProgressBarProps) {
   const progress = Math.min(1, Math.max(0, value));
@@ -43,11 +52,16 @@ export function ProgressBar({ value, tone = "fill", height = 16, label, classNam
       aria-valuemax={100}
       aria-valuenow={Math.round(progress * 100)}
       aria-valuetext={label}
-      className={cn("relative w-full bg-track", className)}
+      className={cn("relative w-full bg-track", label && "@container", className)}
       style={{ height, borderRadius: height / 2 }}
     >
+      {label && (
+        <span aria-hidden="true" className={cn(LABEL_COPY, "right-0 text-(--c-quest-fg) dark:text-fg-2")}>
+          {label}
+        </span>
+      )}
       <div
-        className={cn("progress-fill relative h-full", TONE_CLASSES[tone])}
+        className={cn("progress-fill relative h-full", label && "overflow-hidden", TONE_CLASSES[tone])}
         style={{ width: `${progress * 100}%`, minWidth: progress > 0 ? height * 1.5 : 0, borderRadius: "inherit" }}
       >
         {progress > 0 && (
@@ -56,12 +70,12 @@ export function ProgressBar({ value, tone = "fill", height = 16, label, classNam
             style={{ left: height / 4, right: height / 4 }}
           />
         )}
+        {label && (
+          <span aria-hidden="true" className={cn(LABEL_COPY, "w-[100cqw] text-(--c-quest-fg)")}>
+            {label}
+          </span>
+        )}
       </div>
-      {label && (
-        <span className="absolute inset-0 flex items-center justify-center text-[14px] leading-[18px] font-extrabold text-(--c-quest-fg) tabular-nums">
-          {label}
-        </span>
-      )}
     </div>
   );
 }

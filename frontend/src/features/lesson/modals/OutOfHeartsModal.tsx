@@ -27,8 +27,9 @@ interface OutOfHeartsModalProps {
 }
 
 /**
- * Opens after the CONTINUE that follows the lost last heart. REFILL HEARTS buys full hearts and the lesson
- * goes on; NO THANKS ends it with no XP. It cannot be dismissed any other way.
+ * Opens after the CONTINUE that follows the lost last heart; on phones it covers the whole screen. REFILL
+ * HEARTS buys full hearts and the lesson goes on; NO THANKS ends it with no XP. It cannot be dismissed any
+ * other way.
  */
 export function OutOfHeartsModal({ open, price, gems, refilling, leaving, onRefill, onNoThanks }: OutOfHeartsModalProps) {
   const affordable = gems === null || gems >= price;
@@ -38,6 +39,7 @@ export function OutOfHeartsModal({ open, price, gems, refilling, leaving, onRefi
       open={open}
       onOpenChange={() => undefined}
       dismissible={false}
+      layout="fullscreen"
       illustration={<BreakingHeart />}
       title="You ran out of hearts!"
       description="You have no hearts left! Try an option below"
