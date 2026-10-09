@@ -182,7 +182,7 @@ SQLite evaluates CHECK constraints after **every statement** and cannot defer th
 - each connection runs `PRAGMA foreign_keys = ON`, `journal_mode = WAL`, `synchronous = NORMAL` and `busy_timeout = 5000`;
 - the driver's own transaction handling is disabled (`isolation_level = None`) and every transaction starts with `BEGIN IMMEDIATE`, taking the write lock up front.
 
-Why: GET requests write during the catch-up sync, and a page fires several queries at once. With deferred transactions two requests can both read and then fail to upgrade to the write lock (`SQLITE_BUSY`, which no busy timeout fixes). Taking the lock at `BEGIN` makes them queue. Uvicorn runs one worker, each transaction takes milliseconds, and the partial and natural-key unique indexes are the backstop. `tests/db/test_concurrency.py` runs concurrent read-modify-write transactions and checks that no update is lost, that two simultaneous completions pay once, and that two simultaneous purchases with one key charge once.
+Why: GET requests write during the catch-up sync, and a page fires several queries at once. With deferred transactions two requests can both read and then fail to upgrade to the write lock (`SQLITE_BUSY`, which no busy timeout fixes). Taking the lock at `BEGIN` makes them queue. Uvicorn runs one worker, each transaction takes milliseconds, and the partial and natural-key unique indexes are the backstop. `tests/db/test_concurrency.py` runs concurrent read-modify-write transactions and checks that no update is lost, that two simultaneous completions pay once, that two simultaneous purchases with one key charge once, and that a request held after its catch-up acts on what another tab committed meanwhile.
 
 ## 3. The request lifecycle
 
@@ -210,27 +210,30 @@ sequenceDiagram
   C-->>B: Access-Control-Allow-Origin
 ```
 
-1. **Middleware.** `RequestIdMiddleware` (`backend/app/api/middleware.py`) is a plain ASGI middleware added inside `CORSMiddleware`. It echoes a valid incoming `X-Request-ID` or creates a 12-hex id, and on the way out adds `X-Request-ID`, `X-Boot-Id`, `X-Server-Time` (when the request resolved a `now`) and `Cache-Control: no-store` unless the route set its own. It also converts an unhandled exception into the `500 INTERNAL_ERROR` problem document itself: Starlette's last-resort handler sits outside CORS, so its response would lack CORS headers and the browser would hide it. It logs one line per request: method, path, status, duration and request id.
+1. **Middleware.** `RequestIdMiddleware` (`backend/app/api/middleware.py`) is a plain ASGI middleware added inside `CORSMiddleware`. It echoes a valid incoming `X-Request-ID` or creates a 12-hex id, and on the way out adds `X-Request-ID`, `X-Boot-Id`, `X-Server-Time` (when the request resolved a `now`) and `Cache-Control: no-store` unless the route set its own. It also converts an unhandled exception into the `500 INTERNAL_ERROR` problem document itself: Starlette's last-resort handler sits outside CORS, so its response would lack CORS headers and the browser would hide it. It logs one line per request: method, path, status, duration and request id. Inside it, `BodyLimitMiddleware` refuses a body over 64 KiB (far above the largest real request) with a 422 `VALIDATION_ERROR`, from its `Content-Length` before reading anything, or once a chunked body passes the limit.
 2. **Dependencies** (`backend/app/api/deps.py`), each resolved once per request and shared:
    - `get_db`: a session; whatever is not committed is rolled back when it closes. Its first SQL statement (here, loading the learner) opens the request's first `BEGIN IMMEDIATE`;
    - `get_current_user`: the default learner, or the `X-User-Id` learner when allowed;
    - `get_real_clock` (tests replace it with a `FrozenClock`) and `get_clock`: real time plus `app_state.clock_offset_seconds`;
    - `get_now`: the request's single instant, also stored on `request.state` for the `X-Server-Time` header;
-   - `get_ctx`: runs `sync_service.bring_to_now()` and **commits** it, then returns `RequestContext(user, stats, now, today, settings)`;
+   - `get_ctx`: runs `sync_service.bring_to_now()` and **commits** it, expires everything read so far (so the handler reads the learner's rows again inside its own transaction), then returns `RequestContext(user, stats, now, today, settings)`;
    - `require_dev_tools` guards `/dev`; `idempotency_key` reads and checks the purchase header.
 3. **The router calls exactly one service function** and then **commits** (unit of work 2). Routers never touch models or SQL.
 4. **The completion route** builds a fresh `me` after its commit and attaches it to the receipt.
 5. **Serialization.** Every schema extends `ApiModel` (`backend/app/schemas/base.py`): camelCase aliases, unknown input fields rejected, and every datetime serialized as ISO-8601 UTC with a `Z`.
 
-**Two units of work at most.** The catch-up is committed on its own, so time that passed stays caught up even when the handler then fails with a 409. Committing in the router rather than in a dependency's teardown guarantees that the client never receives a 200 for a change that failed to commit.
+**Two units of work at most.** The catch-up is committed on its own, so time that passed stays caught up even when the handler then fails with a 409. Committing in the router rather than in a dependency's teardown guarantees that the client never receives a 200 for a change that failed to commit. Another tab's request can run and commit between the two units of work; because the context's rows are re-read after the first commit, the handler acts on fresh values (a purchase sees gems just spent, a wrong answer the hearts of a refill just bought).
 
-**Errors.** Services raise `AppError` subclasses (`backend/app/core/errors.py`, no web-framework imports), each with a stable code, HTTP status, title, learner-friendly detail and optional extension members. Four handlers in `backend/app/api/problems.py` render problem documents: `AppError`, request validation (field paths are Pydantic locations joined with dots, using the client's names, such as `body.dailyGoalXp`), Starlette HTTP errors (404, and 405 with its `Allow` header) and a backstop for anything else. The generated OpenAPI documents error bodies as `application/problem+json`.
+**Reference data.** The course content and the catalogues never change while the server runs, so `services/reference.py` reads them once per database into frozen dataclasses that every request shares (warmed at startup, dropped when the seed writes new content). A lesson completion runs about 54 SQL statements and a profile about 22.
+
+**Errors.** Services raise `AppError` subclasses (`backend/app/core/errors.py`, no web-framework imports), each with a stable code, HTTP status, title, learner-friendly detail and optional extension members. Four handlers in `backend/app/api/problems.py` render problem documents: `AppError`, request validation (at most 20 field errors; field paths are Pydantic locations joined with dots, using the client's names, such as `body.dailyGoalXp` or `path.sessionId`), Starlette HTTP errors (404, 405 with its `Allow` header, and the body limit's 413, reported as a 422) and a backstop for anything else. Ids in the URL carry camelCase names (`sessionId`, `itemId`, `nodeId`, `membershipId`, `purchaseId`, `userId`, `unitId`) and must be 1 to 2^63−1 (SQLite's integer range) in ASCII digits, so an impossible id is a 422 rather than a query the database can't run. The generated OpenAPI documents error bodies as `application/problem+json`.
 
 **Where validation lives**
 
 | Concern | Layer | Result |
 |---|---|---|
-| Shape, types, ranges, enums (`dailyGoalXp` in 10/20/30/50, IANA zone, text 1 to 200 characters, clock jumps of 1 minute to 60 days, `nodeId` rules) | Pydantic schemas | 422 `VALIDATION_ERROR` |
+| Body size (at most 64 KiB) | `BodyLimitMiddleware` | 422 `VALIDATION_ERROR` |
+| Shape, types, ranges, enums (`dailyGoalXp` in 10/20/30/50, IANA zone, text 1 to 200 characters, clock jumps of 1 minute to 60 days, `nodeId` rules, URL ids 1 to 2^63−1) | Pydantic schemas | 422 `VALIDATION_ERROR` |
 | The answer fits the exercise (ids, type, CAN'T LISTEN only on listening) | `domain/grading.py` | 422 `INVALID_ANSWER` |
 | Game rules (locked, hearts, gems, order, deadlines, key reuse) | domain decides, service raises | 409 or 422 with a specific code |
 | Data integrity (FK, CHECK, UNIQUE) | SQLite | 500 (a bug), except idempotency races, which become replays |
@@ -263,9 +266,9 @@ Nothing runs in the background. `sync_service.bring_to_now(db, user, now, settin
 1. **Finalize ended league weeks** (global, oldest first), so new XP lands in the right tier. Learners whose weeks were finalized have their league achievements re-evaluated.
 2. **Regenerate hearts**, which may unblock a lesson paused at 0 hearts.
 3. **Settle the streak**: equipped freezes cover missed days, or the streak is lost; frozen days are written to the calendar.
-4. **Expire an idle session**: an active session untouched for 2 hours ends as abandoned (`idle_timeout`).
+4. **Expire an idle session**: an active session with no answer and no resume for 2 hours ends as abandoned (`idle_timeout`).
 
-Each step is idempotent and depends only on `now`, which is why GET requests may run it and why a server that slept for hours catches up exactly on its first request. `/health`, `/courses` and `/units/{id}/guidebook` do not sync; `/shop/items` does, because availability depends on the learner's hearts and gems.
+Each step is idempotent and depends only on `now`, which is why GET requests may run it and why a server that slept for hours catches up exactly on its first request. `/health`, `/courses` and `/units/{unitId}/guidebook` do not sync; `/shop/items` does, because availability depends on the learner's hearts and gems.
 
 ## 6. The session engine
 
@@ -286,7 +289,7 @@ All play goes through `backend/app/services/session_service.py`, with the rules 
 
 `POST /sessions {kind, nodeId?}` is started from a click, never on page load. The schema requires a node for `lesson` and `legendary` and forbids one for `timed` (422). Then:
 
-1. **Resume.** If the learner's active session has the same kind and node, it is returned with `resumed: true` and status 200. Nothing is charged again.
+1. **Resume.** If the learner's active session has the same kind and node, it is returned with `resumed: true` and status 200. Nothing is charged again, and the resume counts as activity, so the idle timeout starts over.
 2. **Preconditions** (`planner.start_refusal`), checked before anything changes, so a refused start leaves an active session untouched:
 
    | Kind | Refusals, in order |
@@ -330,7 +333,7 @@ A lesson at 0 hearts is **blocked**, not ended: `blockedReason` is `OUT_OF_HEART
 4. The item is the current one (`409 ITEM_OUT_OF_ORDER`, with `currentItemId`), and a lesson is not blocked (`409 OUT_OF_HEARTS`).
 5. The answer fits the exercise (`422 INVALID_ANSWER`).
 
-Then the grade, note, canonical payload and time are recorded on the item. CAN'T LISTEN resolves every other unanswered listening item of the session the same way. `session_flow.decide()` says what the answer costs: a lesson loses a heart and appends a retry; practice appends a retry if the exercise has not been retried yet; Legendary fails the run on the third mistake (`failed`, `too_many_mistakes`). A correct answer in Timed practice moves the deadline. The response (`AnswerResultOut`) carries the verdict, the correct solution, the note, the hearts, progress, combo, the appended retry item, and the session's new state (current item, blocked, can complete, lives, deadline).
+Then the grade, note, canonical payload and time are recorded on the item. CAN'T LISTEN resolves every other unanswered listening item of the session the same way. `session_flow.decide()` says what the answer costs: a lesson loses a heart and appends a retry; practice appends a retry if the exercise has not been retried yet; Legendary fails the run on the third mistake (`failed`, `too_many_mistakes`). Every correct answer in Timed practice moves the deadline by its bonus, even one accepted in the grace period. The response (`AnswerResultOut`) carries the verdict, the correct solution, the note, the hearts, progress, combo, the appended retry item, and the session's new state (current item, blocked, can complete, lives, deadline).
 
 A replay recomputes the verdict (grading is deterministic) and reports the heart loss and retry exactly as the first answer did.
 
@@ -360,11 +363,11 @@ A replay recomputes the verdict (grading is deterministic) and reports the heart
 
 - **Quit** has no body: the server decides. An active lesson blocked at 0 hearts ends `failed` (`out_of_hearts`); anything else ends `abandoned` (`quit`). No XP is paid; hearts already lost and a Legendary fee stay spent. Quitting an ended session replays its outcome.
 - **Supersede**: starting a different session ends the active one as `abandoned` (`superseded`).
-- **Expiry**: the sync abandons a session idle for 2 hours (`idle_timeout`).
+- **Expiry**: the sync abandons a session idle for 2 hours (`idle_timeout`); answering it or resuming it with `POST /sessions` counts as activity.
 
 ### 6.8 The Timed practice deadline
 
-A timed session starts with `expires_at = started_at + 30 s`. Each correct answer adds its type's bonus (5 s for multiple choice and match pairs, 10 s for fill in the blank and translate). Answers are accepted until `expires_at + 5 s`. Once `now >= expires_at` the session can complete with time up, which is a normal end, never a failure. In the browser, `TimedClock` counts down on server time and dispatches `TIME_UP`; the reducer waits for an answer in flight, and a late answer's `SESSION_EXPIRED` also leads to completion.
+A timed session starts with `expires_at = started_at + 30 s`. Each correct answer adds its type's bonus (5 s for multiple choice and match pairs, 10 s for fill in the blank and translate). Answers are accepted until `expires_at + 5 s`, and a correct one accepted in that grace, after the clock reached zero, still moves the deadline. Once `now >= expires_at` the session can complete with time up, which is a normal end, never a failure. In the browser, `TimedClock` counts down on server time and dispatches `TIME_UP`; the reducer waits for an answer in flight: if that answer moved the deadline (and exercises remain) the run goes on, otherwise it completes. A late answer's `SESSION_EXPIRED` also leads to completion.
 
 ## 7. The grading pipeline
 
@@ -382,7 +385,7 @@ A timed session starts with `expires_at = started_at + 30 s`. Each correct answe
 10. **Otherwise wrong**, with the note `missing_word` when the answer equals the primary minus one word, or `wrong_word` when exactly one word differs.
 11. **Solution shown**: after an `accent` or `typo` note, the accepted answer the learner was close to; otherwise the primary answer (for multiple choice the correct option, for fill in the blank the sentence with the blank filled, for match pairs nothing).
 
-**The known-word guard.** `session_service._vocabulary()` builds, once per database and course, the set of every word of the course in each language: glossary terms plus every text a learner might type or tap (accepted answers, tiles, choices and pair sides), normalized and accent-stripped. A one-letter slip that produces one of those words is a real word the learner chose, so "Buenos noches" for "Buenas noches" and "La padre se llama Elena" for "La madre se llama Elena" are graded `incorrect` with `wrong_word`.
+**The known-word guard.** `CourseContent.vocabulary` (`domain/content.py`, kept with the cached course content) is built once per database and course: the set of every word of the course in each language, from glossary terms and every text a learner might type or tap (accepted answers, tiles, choices and pair sides), normalized and accent-stripped. A one-letter slip that produces one of those words is a real word the learner chose, so "Buenos noches" for "Buenas noches" and "La padre se llama Elena" for "La madre se llama Elena" are graded `incorrect` with `wrong_word`.
 
 **Word hints** (`domain/hints.py`). Prompts in the learning language are cut into segments that concatenate back to the exact text; going left to right, the longest run of up to three words that is a glossary term becomes a hinted segment (the dotted underline). Case and punctuation are ignored, accents are not ("cómo" is not "como"), and a term never spans punctuation. Legendary runs show prompts without hints, and listening prompts have no visible segments at all.
 
@@ -407,7 +410,7 @@ The stored state is `StreakState(current, longest, last_date, freezes)`, where `
 - **`credit(state, today)`**, after a completed session that earned XP: a streak covering yesterday grows by one, anything else starts at 1, `longest` follows, and `last_date` becomes today. A second session the same day changes nothing.
 - **`status`**: `inactive` (no streak), `at_risk` (alive but today not done: the grey flame) or `extended` (the orange flame).
 - **Milestones**: 7, 14, 30, 50, 75, 100, 125, 150, 200, 250, 300, 365, then every multiple of 100.
-- **Time zones**: the frontend adopts the device zone once, when `me.user.timezoneConfirmed` is false, with a single settings PATCH. If the sample learner is untouched since the seed (no session started and no gem moved at or after `app_state.seeded_at`), the server rebuilds the sample history in the new zone with the demo reset (`reset_demo(..., tz=new_zone)`, back on real time) and answers `timezoneEffect: "reseeded"`: every stored day (XP days, the calendar, quests) is then a day of the visitor's zone. Otherwise, and for later changes, `shift_for_timezone` moves `last_date` by the difference between the learner's local date in the new and the old zone at `now` (usually −1, 0 or +1 day), so a change neither breaks nor inflates the streak (`"shifted"`); stored day snapshots keep their dates. Either effect makes the client refetch everything.
+- **Time zones**: the frontend adopts the device zone once, when `me.user.timezoneConfirmed` is false, with a single settings PATCH. If the sample learner is untouched since the seed (no session started and no gem moved at or after `app_state.seeded_at`), the server rebuilds the sample history in the new zone with the demo reset (`reset_demo(..., tz=new_zone)`, back on real time) and answers `timezoneEffect: "reseeded"`: every stored day (XP days, the calendar, quests) is then a day of the visitor's zone. Otherwise, and for later changes, `shift_for_timezone` moves `last_date` by the difference between the learner's local date in the new and the old zone at `now` (usually −1, 0 or +1 day), so a change neither breaks nor inflates the streak (`"shifted"`); stored day snapshots keep their dates. Either effect makes the client refetch everything. Old names that some browsers still report are stored under the current IANA name (`canonical_timezone` in `domain/calendar.py`: `Asia/Calcutta` → `Asia/Kolkata`, `Europe/Kiev` → `Europe/Kyiv`, …), so an Indian visitor whose browser says `Asia/Calcutta` is already in the seeded zone and gets `"none"`.
 
 Days are compared as dates, never as "24 hours since", so a 23- or 25-hour DST day is exactly one day. Persistence (`streak_service.py`): `user_stats.streak_*` plus `activity_days`, where credit upserts today's row as `active` with the daily goal in force and settle inserts `frozen` rows for covered days.
 
@@ -417,7 +420,7 @@ Days are compared as dates, never as "24 hours since", so a 23- or 25-hour DST d
 
 **Standings.** Learners' weekly XP is `SUM(xp_events.amount)` inside the week window, and the time they reached it is their latest XP row. Bots' XP comes from `bot_week_xp()`. `rank()` orders by XP, then by who reached it first, then by user id. Zones: the top `promote_count` places promote and the bottom `demote_count` places demote (Bronze has no demotion zone and Diamond no promotion zone). `xpToPassNext` is the XP needed to strictly pass the row above.
 
-**Finalization** happens lazily in the sync's first step: every unfinalized cohort whose week started before the current week is ranked as of its week's end, oldest week first. Every member, bots included, gets `final_xp`, `final_rank` and `outcome` (a promotion needs at least 1 XP; the demotion zone always demotes); learners move to their new tier and their league achievements are re-evaluated. A learner who earned nothing that week has no membership, so a skipped week never demotes. The newest unseen result appears as `me.pendingLeagueResult` and in a jump's `effects.leagueResults`; `POST /me/league/results/{id}/ack` records that the modal was seen.
+**Finalization** happens lazily in the sync's first step: every unfinalized cohort whose week started before the current week is ranked as of its week's end, oldest week first. Every member, bots included, gets `final_xp`, `final_rank` and `outcome` (a promotion needs at least 1 XP; the demotion zone always demotes); learners move to their new tier and their league achievements are re-evaluated. A learner who earned nothing that week has no membership, so a skipped week never demotes. The newest finalized week's result appears as `me.pendingLeagueResult` only while it is unacknowledged (an older week nobody acknowledged never resurfaces once the newest one is seen), and every week a catch-up finalizes appears in a jump's `effects.leagueResults`; `POST /me/league/results/{membershipId}/ack` records that the modal was seen.
 
 **The bot XP function** (`domain/bots.py`). Bots write no rows. For one (bot, week, tier), `bot_week_schedule(rng_seed, daily_xp, week_start, tier)` draws, with a sha256-seeded generator:
 
@@ -538,7 +541,7 @@ stateDiagram-v2
   checking --> feedback: ANSWER_OK
   checking --> answering: cant_listen result, or a retryable failure
   checking --> blocked: ANSWER_FAILED with OUT_OF_HEARTS
-  checking --> completing: time up or SESSION_EXPIRED
+  checking --> completing: time up and the deadline did not move, or SESSION_EXPIRED
   checking --> exiting: SESSION_NOT_ACTIVE
   feedback --> answering: CONTINUE
   feedback --> coach: CONTINUE at a coach moment
@@ -592,14 +595,14 @@ Breakpoints at 700, 768, 1100 and 1160 px (plus 360 and 530 for small phones) fo
 
 ## 14. Testing strategy
 
-**Backend: 1,133 pytest tests, all passing** (about 105 seconds on a laptop; `pytest -q` from `backend/`).
+**Backend: 1,217 pytest tests, all passing** (about 130 seconds on a laptop; `pytest -q` from `backend/`).
 
 | Suite | Tests | What it proves |
 |---|---|---|
-| `tests/domain/` | 516 | The pure rules, table-driven: grading (113 cases, including every leniency rule and the known-word guard), session flow (65), streak (64: settle cases, freezes, DST and zone shifts), planners (46), path (41), leagues (36), hearts (30), XP (29), calendar (28), achievements (21), hints (20), bots (14, including cross-process determinism and the weekly bound), quests (9) |
-| `tests/db/` | 57 | Every CHECK, UNIQUE and foreign key rejects what it should (48); the 30 tables, the `ON DELETE` policy, foreign key indexes and index names (5); concurrency (4): no lost updates under `BEGIN IMMEDIATE`, two simultaneous completions pay once, two simultaneous purchases with one key charge once, the unique key backstops a purchase that missed the lookup |
-| `tests/api/` | 409 | Behaviour through HTTP on a copy of the seeded demo: the wire contract (232: every schema's keys against the recorded contract and against the frontend's `types.ts`, enums and literals, problem documents, headers, CORS on a 500), session lifecycle, answers and replays, hearts, practice, Legendary and Timed practice, shop and idempotency, chests and quests, leagues, time travel, time zones, profile and activity, the demo reset, health and `me`, the golden lesson path, and seeded random walks |
-| `tests/seed/` | 144 | Every validation rule with a failing fixture (91), the exact seeded state (47), the promotion property over 8 weeks × 3 zones, and the illustration keys shared with the frontend |
+| `tests/domain/` | 521 | The pure rules, table-driven: grading (113 cases, including every leniency rule and the known-word guard), session flow (65), streak (64: settle cases, freezes, DST and zone shifts), planners (46), path (41), leagues (36), calendar (33, including old zone aliases), hearts (30), XP (29), achievements (21), hints (20), bots (14, including cross-process determinism and the weekly bound), quests (9) |
+| `tests/db/` | 60 | Every CHECK, UNIQUE and foreign key rejects what it should (48); the 30 tables, the `ON DELETE` policy, foreign key indexes and index names (5); concurrency (7): no lost updates under `BEGIN IMMEDIATE`, two simultaneous completions pay once, two simultaneous purchases with one key charge once, the unique key backstops a purchase that missed the lookup, and a purchase, a wrong answer or a completion held after its catch-up acts on what another tab committed meanwhile |
+| `tests/api/` | 483 | Behaviour through HTTP on a copy of the seeded demo: the wire contract (290 in five files: `test_contract_shapes.py`, every schema's keys against the recorded contract and against the frontend's `types.ts`, enums, literals and value formats; `test_endpoint_tour.py`, all 27 endpoints answering in that shape; `test_problems.py`, invalid input of every kind, oversized bodies, ids out of range, each problem document and CORS on a 500; `test_identity_and_headers.py`, the acting learner, headers and the log line; `test_openapi.py`, the OpenAPI document and the docs page), session lifecycle, answers and replays, hearts, practice, Legendary and Timed practice, shop and idempotency, chests and quests, leagues, time travel, time zones, profile and activity, the demo reset, health and `me`, the golden lesson path, and seeded random walks |
+| `tests/seed/` | 146 | Every validation rule with a failing fixture (91), the exact seeded state (49), the promotion property over 8 weeks × 3 zones, and the illustration keys shared with the frontend |
 | `tests/test_no_wall_clock.py` | 7 | No wall-clock reads outside `core/clock.py`; the clock classes behave |
 
 How the tests are built:
@@ -610,7 +613,7 @@ How the tests are built:
 - **Random walks** (`tests/api/test_random_walk.py`): seeded sequences of 30 random learner actions (starting any kind of session, answering right or wrong, skipping, completing, quitting, buying, opening chests, acknowledging results, jumping the clock, changing hearts), in orders no screen would offer. A refused action is fine; a 5xx never is, and the invariants must hold after every step. Each seed replays exactly.
 - **Two learners.** A second learner, addressed with `X-User-Id`, proves that learners never see each other's data.
 
-**Frontend: 509 Vitest tests in 41 files, all passing** (`npm test`, about 2 seconds). They run in a Node environment and cover pure logic only: the lesson reducer (the largest suite), celebrations and their copy, answer drafts and payloads, hotkeys, problem parsing, mutation cache rules and retry rules, the server clock, the wake gate and boot watch, voice choice, the Markdown subset for Guidebook tips, formatting, and feature helpers (path layout, node popover and presentation, standings and league copy, shop item states, practice availability, quest copy, demo tools, settings patches, time zones, the streak calendar, profile charts, icon and illustration geometry, confetti physics). Layouts and visuals are reviewed in the browser at 375, 768, 1024 and 1440 px, in light and dark.
+**Frontend: 532 Vitest tests in 44 files, all passing** (`npm test`, about 2 seconds). They run in a Node environment and cover pure logic only: the lesson reducer (the largest suite), celebrations and their copy, answer drafts and payloads, hotkeys, problem parsing, mutation cache rules and retry rules, the server clock, the wake gate and boot watch, voice choice, the Markdown subset for Guidebook tips, formatting, and feature helpers (path layout, node popover and presentation, standings and league copy, shop item states, practice availability, quest copy, demo tools, settings patches, time zones, the streak calendar, profile charts, icon and illustration geometry, confetti physics). Layouts and visuals are reviewed in the browser at 375, 768, 1024 and 1440 px, in light and dark.
 
 **CI** (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request: Ruff, `python -m app.seed --check` and pytest with coverage for the backend; `npm ci`, ESLint, `tsc --noEmit`, Vitest and `next build` for the frontend.
 
@@ -628,8 +631,8 @@ Following one word-bank answer in a practice session, "Quiero té y leche" for "
 **On the server**
 
 5. **Edge.** `CORSMiddleware`, then `RequestIdMiddleware` assigns a request id. FastAPI matches `submit_answer` in `backend/app/api/v1/sessions.py` and validates the body as `AnswerIn`: the `type` discriminator selects `TranslateAnswer`, which requires exactly one of `tileIds` and `text`.
-6. **Dependencies.** `get_db` opens a session; `get_current_user` loads Alex, the first statement, which opens `BEGIN IMMEDIATE`; `get_clock` reads the demo offset and `get_now` fixes the request's instant; `get_ctx` runs `bring_to_now()` (leagues, hearts, streak, idle session) and commits. The handler's first statement then opens the second `BEGIN IMMEDIATE`.
-7. **Use case.** `session_service.answer()` loads the session with its queue, exercises and their children (`play_repo.get_owned_session`, eager loading) and finds item 201. `canonical_json(body)` gives `{"text":null,"tileIds":[227,230,228,225],"type":"translate"}`. The item is unanswered, so `_check_answerable()` confirms the session is active, item 201 is current and the session is not blocked.
+6. **Dependencies.** `get_db` opens a session; `get_current_user` loads Alex, the first statement, which opens `BEGIN IMMEDIATE`; `get_clock` reads the demo offset and `get_now` fixes the request's instant; `get_ctx` runs `bring_to_now()` (leagues, hearts, streak, idle session), commits and expires what it read. The handler's first statement then opens the second `BEGIN IMMEDIATE`, and the learner's rows are read again inside it.
+7. **Use case.** `session_service.answer()` loads the session with its queue (`play_repo.get_owned_session`, eager loading), finds item 201, and takes its exercise, with options, answers and pairs, from the cached course content (`reference.course_content`), with no query. `canonical_json(body)` gives `{"text":null,"tileIds":[227,230,228,225],"type":"translate"}`. The item is unanswered, so `_check_answerable()` confirms the session is active, item 201 is current and the session is not blocked.
 8. **Grade.** `exercises.answer_key(exercise)` and `exercises.to_answer(body)` adapt the row and the body; `grading.grade()` checks every tile id belongs to the exercise and appears once, joins the tiles into "Quiero té y leche", and `grade_text(…, lenient=False)` finds it equal, once normalized, to the primary answer "Quiero té y leche.". The verdict: `correct`, no note, solution "Quiero té y leche.".
 9. **Record.** `_record()` sets `result = 'correct'`, `note = NULL`, `submitted_json` and `answered_at = now` on the `session_items` row: one `UPDATE`, which the paired CHECKs require. `session_flow.decide()` returns no heart loss, no retry and no failure; `last_activity_at` moves to `now`; `db.flush()`.
 10. **Respond.** `_answer_out()` derives the response from the items: progress 1 of 10, combo 1, hearts, and the session's new state (`currentItemId` 202, `canComplete` false). The router commits; the response is serialized in camelCase; the middleware adds `X-Request-ID`, `X-Boot-Id`, `X-Server-Time` and `Cache-Control: no-store`, and CORS adds its header.

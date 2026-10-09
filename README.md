@@ -58,7 +58,7 @@ Each item of the assignment, and where it lives.
 **2. Lesson player (the core loop)**
 
 - [x] **Five exercise types:** multiple choice (text list or picture cards), translate (word bank tiles or typed with USE KEYBOARD), match pairs, fill in the blank, and type the answer (including "Type what you hear" listening exercises).
-- [x] **Immediate feedback bar.** Every answer is graded by the server (`PUT /sessions/{id}/items/{itemId}/answer`); the green or red bar shows the correct solution, notes about accents, typos or a missing word, and plays a sound.
+- [x] **Immediate feedback bar.** Every answer is graded by the server (`PUT /sessions/{sessionId}/items/{itemId}/answer`); the green or red bar shows the correct solution, notes about accents, typos or a missing word, and plays a sound.
 - [x] **Progress bar.** It moves only when an exercise is resolved and never moves backwards; a missed exercise comes back at the end of the lesson labelled PREVIOUS MISTAKE.
 - [x] **Hearts and failure.** A wrong answer or a skip in a lesson costs one heart. At zero hearts the lesson pauses behind the out-of-hearts modal: refill with gems and continue, or quit. Starting a lesson with zero hearts opens a start gate instead, offering a refill or "Practice to earn hearts". A Legendary run fails on its third mistake.
 - [x] **XP and skill progress on completion.** Completion pays XP lines, extends the streak, joins the weekly league, pays quests and unlocks achievements in one transaction, then plays the celebration screens; back on the path the next node unlocks with an animation.
@@ -174,7 +174,7 @@ Vercel serves the Next.js app; all data is fetched in the browser, straight from
 
 ```mermaid
 flowchart TB
-  MW["RequestIdMiddleware (inside CORS)"] --> RT["api/v1 routers<br/>paths, status codes, headers, the commit"]
+  MW["RequestIdMiddleware and BodyLimitMiddleware (inside CORS)"] --> RT["api/v1 routers<br/>paths, status codes, headers, the commit"]
   RT --> DP["api/deps<br/>session, clock, now, learner, catch-up sync"]
   RT --> SV["services<br/>one function per use case"]
   SV --> DM["domain<br/>pure rules and constants"]
@@ -191,7 +191,7 @@ flowchart TB
 | `repositories/` | small typed queries and eager loading | applies rules or commits |
 | `models/` | tables, constraints and relationships | carries behaviour |
 
-**One request, end to end.** The middleware assigns a request id. FastAPI resolves the dependencies once per request: a database session, the clock (real time plus the demo offset), a single `now`, the current learner, and the request context, which first brings the learner's state up to `now` (finalize ended league weeks, regenerate hearts, settle the streak, expire an idle session) and commits that catch-up. The router then calls exactly one service function and commits its work. The response leaves with `X-Request-ID`, `X-Boot-Id`, `X-Server-Time` and `Cache-Control: no-store`. Writes are serialized by SQLite `BEGIN IMMEDIATE` transactions.
+**One request, end to end.** The middleware assigns a request id and refuses a body over 64 KiB. FastAPI resolves the dependencies once per request: a database session, the clock (real time plus the demo offset), a single `now`, the current learner, and the request context, which first brings the learner's state up to `now` (finalize ended league weeks, regenerate hearts, settle the streak, expire an idle session) and commits that catch-up; the learner's rows are then read again, so a write another tab committed in between is never acted on with stale values. The router then calls exactly one service function and commits its work. The response leaves with `X-Request-ID`, `X-Boot-Id`, `X-Server-Time` and `Cache-Control: no-store`. Writes are serialized by SQLite `BEGIN IMMEDIATE` transactions. The course content and catalogues never change while the server runs, so they are read once and kept in memory (`backend/app/services/reference.py`): a lesson completion runs about 54 SQL statements and a profile about 22.
 
 **Time.** `backend/app/core/clock.py` is the only module that reads the wall clock (a test enforces it). The game's time is real UTC time plus a forward-only offset stored in `app_state`; the Demo tools only ever add to it. Every rule receives the request's single `now`, and tests freeze it.
 
@@ -481,14 +481,14 @@ X-Request-ID: d04b80edfb51
 }
 ```
 
-`errors[]` is filled only for `VALIDATION_ERROR`, for example `{"field": "body.dailyGoalXp", "message": "Input should be 10, 20, 30 or 50", "kind": "literal_error"}`. Unhandled exceptions become `500 INTERNAL_ERROR` inside the CORS middleware, so the browser can still read them.
+`errors[]` is filled only for `VALIDATION_ERROR` (at most 20 entries), for example `{"field": "body.dailyGoalXp", "message": "Input should be 10, 20, 30 or 50", "kind": "literal_error"}`. Ids in the URL (`sessionId`, `itemId`, `nodeId`, `membershipId`, `purchaseId`, `userId`, `unitId`) must be 1 to 2^63−1 in ASCII digits, so an id the database could not hold is a 422 `VALIDATION_ERROR`, never a failed query; a request body over 64 KiB is refused unread with the same code. Unhandled exceptions become `500 INTERNAL_ERROR` inside the CORS middleware, so the browser can still read them.
 
 <details>
 <summary>All 26 error codes</summary>
 
 | Code | HTTP | When |
 |---|---|---|
-| `VALIDATION_ERROR` | 422 | A body, query or path parameter fails its schema (`errors[]` lists each field) |
+| `VALIDATION_ERROR` | 422 | A body, query or path parameter fails its schema (`errors[]` lists up to 20 fields), an id is out of range, or the body is over 64 KiB |
 | `INVALID_ANSWER` | 422 | The answer does not fit the exercise: another type, foreign option, tile or pair ids, a tile used twice, CAN'T LISTEN on a non-listening item, an incomplete matching |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | The same `Idempotency-Key` was used to buy a different item |
 | `IDEMPOTENCY_KEY_REQUIRED` | 400 | A purchase without the header, or a key longer than 64 characters |
@@ -529,7 +529,7 @@ Retries and double clicks are safe. Purchases carry an `Idempotency-Key` header 
 | `POST …/quit` | Quitting an ended session replays its outcome |
 | `POST /me/chests/{nodeId}/claim` | The gem ledger row is the claim, unique per learner and chest; a repeat replays it |
 | `POST /me/purchases` | `UNIQUE(user_id, idempotency_key)`: the same key and item replay the purchase (200); the same key for another item is `422 IDEMPOTENCY_KEY_REUSED` |
-| `POST /me/league/results/{id}/ack` | Keeps the first acknowledgement time |
+| `POST /me/league/results/{membershipId}/ack` | Keeps the first acknowledgement time |
 
 ### Current learner
 
@@ -583,7 +583,7 @@ All constants live in `backend/app/domain/rules.py` (prices and quest rewards ar
 | Practice session | 10 exercises; up to 5 picked from mistakes of the last 14 days; each missed one comes back once |
 | Legendary | 100 gems to enter; up to 12 exercises; no hints; 3 lives; 40 XP plus combo on a pass |
 | Timed practice | 30 s to start; +5 s per correct multiple choice or match, +10 s per correct translate or fill in the blank; up to 20 exercises; 1 XP per correct answer |
-| Idle session | abandoned after 2 hours without an answer |
+| Idle session | abandoned after 2 hours without an answer or a resume |
 | Leagues | unlock after 10 completed sessions of any kind; cohorts of 30 (the learner plus 29 bots drawn from 35) |
 | League ladder (promote / demote) | Bronze 20/0 · Silver 15/7 · Gold 10/7 · Sapphire, Ruby, Emerald, Amethyst and Pearl 7/7 · Obsidian 5/7 · Diamond 0/5 |
 | Chests | 20 gems each, once |
@@ -606,7 +606,7 @@ A wrong answer that leaves out one word or gets one word wrong says "You missed 
 
 **Legendary.** On a finished skill, LEGENDARY charges 100 gems and starts a run of up to 12 of the skill's exercises, with typing, translating and fill-in-the-blank first and never match pairs. There are no hints, no hearts and no timer; the third mistake fails the run (the gems stay spent, and TRY AGAIN starts a new paid run). A pass pays 40 XP plus combo and turns the skill gold.
 
-**Timed practice.** Once a lesson is completed, Timed practice draws up to 20 quick exercises (multiple choice, match pairs, fill in the blank, word-bank translate) from completed lessons. The clock starts at 30 seconds and each correct answer adds 5 or 10 seconds. The deadline lives on the server (with 5 seconds of grace for the network); running out of time is a normal end. Each correct answer is worth 1 XP, with no combo bonus and no boost.
+**Timed practice.** Once a lesson is completed, Timed practice draws up to 20 quick exercises (multiple choice, match pairs, fill in the blank, word-bank translate) from completed lessons. The clock starts at 30 seconds and each correct answer adds 5 or 10 seconds. The deadline lives on the server (with 5 seconds of grace for the network): a correct answer accepted in that grace, after the clock showed zero, still adds its bonus, and the run goes on; otherwise running out of time is a normal end. Each correct answer is worth 1 XP, with no combo bonus and no boost.
 
 **Daily quests and achievements.** Every local day brings three quests: the daily goal, plus one core and one hard quest picked deterministically for that learner and day. Rewards are paid automatically when a session completes a quest. Achievements have levels that compare one statistic with thresholds: Wildfire (longest streak), Sage (total XP), Scholar (words learned), Sharpshooter (perfect lessons), Champion (highest league), Winner (first places) and Legendary (first place in Diamond).
 
@@ -686,7 +686,7 @@ On startup the server creates `backend/data/app.db` and seeds it if it is empty.
 ```bash
 python -m app.seed --check      # validate the seed files and print the totals (no database needed)
 python -m app.seed --reset      # drop and rebuild the local database (stop the server first)
-pytest -q                       # the full backend suite (under two minutes)
+pytest -q                       # the full backend suite (about two minutes)
 ruff check .                    # lint
 ```
 
@@ -769,7 +769,7 @@ The SQLite file lives on Render's ephemeral disk. It is created and seeded on ev
 - **Match-pair mistakes cost no heart.** A wrong pair flashes red and only counts in the lesson statistics; the exercise is submitted once every pair is matched.
 - **One refill price.** A heart refill costs 350 gems everywhere, including inside a lesson.
 - **Typo policy.** One small typo in a word of 4 or more letters is forgiven, never a change of the last letter and never a slip that spells another word of the course; word-bank answers must be exact.
-- **Time zone adoption.** On the first visit the app adopts the browser's time zone. While the demo learner is untouched (no session started and no gems moved since the demo was seeded), the server rebuilds the sample history in that zone (`timezoneEffect: "reseeded"`), so every stored day, from today's XP to the streak calendar, is a day of the reviewer's zone. Otherwise, and for later changes made in Settings, the streak's last covered day moves by the calendar difference between the two zones (`"shifted"`), so the streak is neither broken nor inflated; calendar days already stored keep their dates, so the calendar can show a gap or an overlap at the switch.
+- **Time zone adoption.** On the first visit the app adopts the browser's time zone. While the demo learner is untouched (no session started and no gems moved since the demo was seeded), the server rebuilds the sample history in that zone (`timezoneEffect: "reseeded"`), so every stored day, from today's XP to the streak calendar, is a day of the reviewer's zone. Otherwise, and for later changes made in Settings, the streak's last covered day moves by the calendar difference between the two zones (`"shifted"`), so the streak is neither broken nor inflated; calendar days already stored keep their dates, so the calendar can show a gap or an overlap at the switch. Old zone names that some browsers still report are stored under their current IANA name (Chrome's `Asia/Calcutta` becomes `Asia/Kolkata`), so an Indian visitor is already in the seeded zone and nothing changes (`"none"`).
 - **UTC league weeks.** A league week is one global window from Monday 00:00 UTC, while streak days follow the learner's own zone.
 - **Leaderboard unlock after 10 sessions.** Leagues open after 10 completed sessions of any kind (lessons, practice, Legendary or Timed), in the spirit of Duolingo's "complete 10 lessons".
 - **Shared demo clock.** The simulated time is global: everyone on the hosted demo shares one offset, because bots, cohorts and week rollovers are shared state.
