@@ -291,6 +291,10 @@ export function ackLeagueResultMutation(
     onError: (_error, _membershipId, snapshot) => {
       if (snapshot?.me) queryClient.setQueryData(qk.me, snapshot.me);
       if (snapshot?.league) queryClient.setQueryData(qk.league, snapshot.league);
+      // The result may have been replaced meanwhile (a first-visit rebuild gives it a new id):
+      // reload both so the modal comes back with the current result rather than a stale one.
+      void queryClient.invalidateQueries({ queryKey: qk.me, exact: true });
+      void queryClient.invalidateQueries({ queryKey: qk.league });
     },
   };
 }
@@ -341,8 +345,9 @@ export function updateSettingsMutation(
     onSuccess: ({ timezoneEffect, ...settings }, patch) => {
       queryClient.setQueryData(qk.settings, settings);
       patchMe(queryClient, (me) => ({ ...me, settings }));
-      if (timezoneEffect === "shifted") {
-        // The streak moved to the new zone's calendar: every date-based number may have changed.
+      if (timezoneEffect !== "none") {
+        // The streak moved to the new zone's calendar, or the sample history was rebuilt in it (new rows and
+        // ids, such as the pending league result's): every date-based number may have changed.
         void queryClient.invalidateQueries();
         return;
       }
@@ -357,8 +362,8 @@ export function updateSettingsMutation(
 
 /**
  * Saves settings (any subset). Preferences show at once and roll back on error; a new time zone is applied
- * when the server answers, and a streak shift refreshes everything. A new daily goal refreshes the XP ring
- * (`me.dailyGoal`), the "Earn {goal} XP" quest and today's activity.
+ * when the server answers, and a streak shift or a rebuilt sample history refreshes everything. A new daily goal
+ * refreshes the XP ring (`me.dailyGoal`), the "Earn {goal} XP" quest and today's activity.
  */
 export function useUpdateSettings(): UseMutationResult<SettingsUpdateOut, ApiError, SettingsPatchIn, SettingsSnapshot> {
   const queryClient = useQueryClient();

@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.domain.calendar import (
+    canonical_timezone,
     is_valid_timezone,
     league_week_bounds,
     league_week_start,
@@ -119,3 +120,18 @@ class TestGuards:
     @pytest.mark.parametrize("name", ["", "Mars/Olympus_Mons", "asia/kolkata", "../etc/passwd", "+05:30"])
     def test_unknown_or_non_canonical_zones_are_invalid(self, name: str) -> None:
         assert not is_valid_timezone(name)
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("Asia/Calcutta", "Asia/Kolkata"),
+        ("Europe/Kiev", "Europe/Kyiv"),
+        ("US/Pacific", "America/Los_Angeles"),
+        ("Asia/Kolkata", "Asia/Kolkata"),
+        ("Europe/Madrid", "Europe/Madrid"),
+    ],
+)
+def test_old_zone_names_map_to_their_current_name(name: str, expected: str) -> None:
+    assert canonical_timezone(name) == expected
+    assert is_valid_timezone(canonical_timezone(name))

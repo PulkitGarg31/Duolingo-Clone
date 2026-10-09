@@ -169,10 +169,11 @@ class DayState(StrEnum):
 
 
 class TimezoneEffect(StrEnum):
-    """What a time-zone update did to the learner's streak dates."""
+    """What a time-zone update did to the learner's days."""
 
     NONE = "none"  # same zone: only confirmed
     SHIFTED = "shifted"  # streak dates moved by the day difference between the zones
+    RESEEDED = "reseeded"  # the untouched sample learner's history was rebuilt in the new zone
 
 
 # ---- settings ----

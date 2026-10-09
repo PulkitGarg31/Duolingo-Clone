@@ -106,7 +106,7 @@ Each item of the assignment, and where it lives.
 
 Everything below works on the hosted demo. The Demo tools live in **Settings → Demo tools**; whenever the simulated clock runs ahead of real time, a small DEV badge in the corner links back to them.
 
-**Starting point.** The seeded learner, Alex, is learning Spanish: a 13-day streak still at risk today (grey flame), one Streak Freeze equipped, 4 of 5 hearts, 820 gems, promoted to the Silver league last week, Unit 1 finished (with "Say hello" already Legendary), and the current lesson is **Drinks, lesson 2 of 3**. On the first visit the app quietly adopts your browser's time zone.
+**Starting point.** The seeded learner, Alex, is learning Spanish: a 13-day streak still at risk today (grey flame), one Streak Freeze equipped, 4 of 5 hearts, 820 gems, promoted to the Silver league last week, Unit 1 finished (with "Say hello" already Legendary), and the current lesson is **Drinks, lesson 2 of 3**. On the first visit the app quietly adopts your browser's time zone and, while the demo is untouched, rebuilds this starting point in it, so "today" is your own today.
 
 | To see… | Do this |
 |---|---|
@@ -430,7 +430,7 @@ REST under `/api/v1`, camelCase JSON, ISO-8601 UTC instants ending in `Z`, and l
 | 1 | GET | `/health` | Liveness, seed status and the process's `bootId` (never syncs or writes) |
 | 2 | GET | `/me` | Everything the shell shows: stats, hearts, streak, daily goal, league card, pending league result, settings |
 | 3 | GET | `/me/settings` | Preferences and time zone |
-| 4 | PATCH | `/me/settings` | Partial update; a new time zone reports whether the streak shifted |
+| 4 | PATCH | `/me/settings` | Partial update; a new time zone reports whether the untouched sample history was rebuilt in it or the streak shifted |
 | 5 | GET | `/me/activity?from&to` | One entry per local day: XP, goal in force, active / frozen / none (at most 92 days) |
 | 6 | GET | `/me/path` | Units and nodes with state, crown, progress and the actions each node offers |
 | 7 | POST | `/me/chests/{nodeId}/claim` | Open a reachable chest for its gems (once; a repeat replays) |
@@ -769,7 +769,7 @@ The SQLite file lives on Render's ephemeral disk. It is created and seeded on ev
 - **Match-pair mistakes cost no heart.** A wrong pair flashes red and only counts in the lesson statistics; the exercise is submitted once every pair is matched.
 - **One refill price.** A heart refill costs 350 gems everywhere, including inside a lesson.
 - **Typo policy.** One small typo in a word of 4 or more letters is forgiven, never a change of the last letter and never a slip that spells another word of the course; word-bank answers must be exact.
-- **Time zone adoption is shift-only.** On the first visit the app adopts the browser's time zone: the streak's last covered day moves by the calendar difference between the two zones, so the streak is neither broken nor inflated. Calendar days already stored keep their dates, so the seeded history can look one day off for reviewers far from India; RESET DEMO DATA rebuilds it in the adopted zone. Later changes are made in Settings.
+- **Time zone adoption.** On the first visit the app adopts the browser's time zone. While the demo learner is untouched (no session started and no gems moved since the demo was seeded), the server rebuilds the sample history in that zone (`timezoneEffect: "reseeded"`), so every stored day, from today's XP to the streak calendar, is a day of the reviewer's zone. Otherwise, and for later changes made in Settings, the streak's last covered day moves by the calendar difference between the two zones (`"shifted"`), so the streak is neither broken nor inflated; calendar days already stored keep their dates, so the calendar can show a gap or an overlap at the switch.
 - **UTC league weeks.** A league week is one global window from Monday 00:00 UTC, while streak days follow the learner's own zone.
 - **Leaderboard unlock after 10 sessions.** Leagues open after 10 completed sessions of any kind (lessons, practice, Legendary or Timed), in the spirit of Duolingo's "complete 10 lessons".
 - **Shared demo clock.** The simulated time is global: everyone on the hosted demo shares one offset, because bots, cohorts and week rollovers are shared state.

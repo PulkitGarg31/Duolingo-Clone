@@ -7,7 +7,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from sqlalchemy import ColumnElement, and_, case, func, select
+from sqlalchemy import ColumnElement, and_, case, exists, func, select
 from sqlalchemy.orm import Session
 
 from app.domain.enums import ActivityKind, GemReason, XpReason
@@ -146,6 +146,12 @@ def mark_frozen_days(db: Session, user_id: int, days: Collection[date], *, now: 
 
 
 # ---- gems and purchases ----
+
+
+def gems_moved_since(db: Session, user_id: int, since: datetime) -> bool:
+    """Whether the learner's gem ledger has a row created at or after `since`."""
+    moved = exists().where(GemTransaction.user_id == user_id, GemTransaction.created_at >= since)
+    return bool(db.scalar(select(moved)))
 
 
 def claimed_chest_node_ids(db: Session, user_id: int) -> set[int]:

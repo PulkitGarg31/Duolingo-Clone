@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import ColumnElement, distinct, func, insert, select, update
+from sqlalchemy import ColumnElement, distinct, exists, func, insert, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.domain.enums import EndReason, ItemOrigin, ItemResult, SessionKind, SessionStatus
@@ -132,6 +132,12 @@ def count_completed_sessions(db: Session, user_id: int, *, ended_since: datetime
     if ended_since is not None:
         query = query.where(LessonSession.ended_at >= ended_since)
     return db.scalar(query) or 0
+
+
+def started_since(db: Session, user_id: int, since: datetime) -> bool:
+    """Whether the learner started a session of any kind at or after `since`, finished or not."""
+    started = exists().where(LessonSession.user_id == user_id, LessonSession.started_at >= since)
+    return bool(db.scalar(select(started)))
 
 
 def count_completed_lessons(db: Session, user_id: int) -> int:

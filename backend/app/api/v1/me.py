@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from app.api.deps import CtxDep, DbDep
 from app.api.problems import problem_responses
@@ -45,11 +45,13 @@ def get_settings(ctx: CtxDep) -> SettingsOut:
     summary="Change preferences",
     responses=problem_responses(403, 404, 422),
 )
-def update_settings(body: SettingsPatchIn, db: DbDep, ctx: CtxDep) -> SettingsUpdateOut:
-    """Update only the fields sent. A time zone change reports whether the streak dates shifted."""
+def update_settings(body: SettingsPatchIn, request: Request, db: DbDep, ctx: CtxDep) -> SettingsUpdateOut:
+    """Update only the fields sent. A time zone change reports what it did: the streak dates shifted,
+    or the untouched sample history was rebuilt in the new zone."""
     result = settings_service.update(db, ctx, body)
     db.commit()
-    return result
+    request.state.now = result.now  # a rebuild puts the clock back on real time
+    return result.out
 
 
 @router.get(

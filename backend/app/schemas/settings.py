@@ -5,7 +5,7 @@ from typing import Self
 from pydantic import Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
-from app.domain.calendar import is_valid_timezone
+from app.domain.calendar import canonical_timezone, is_valid_timezone
 from app.domain.enums import Theme, TimezoneEffect
 from app.schemas.base import ApiModel
 from app.schemas.common import DailyGoalXp
@@ -24,7 +24,8 @@ class SettingsOut(ApiModel):
 
 
 class SettingsUpdateOut(SettingsOut):
-    """The settings after a PATCH, and what a time-zone change did to the streak dates."""
+    """The settings after a PATCH, and what a time-zone change did: nothing, a shift of the streak
+    dates, or a rebuild of the untouched sample history in the new zone."""
 
     timezone_effect: TimezoneEffect
 
@@ -45,7 +46,7 @@ class SettingsPatchIn(ApiModel):
     def _known_timezone(cls, value: str | None) -> str | None:
         if value is not None and not is_valid_timezone(value):
             raise PydanticCustomError("unknown_timezone", "Unknown IANA time zone '{zone}'", {"zone": value})
-        return value
+        return None if value is None else canonical_timezone(value)
 
     @model_validator(mode="after")
     def _require_a_change(self) -> Self:

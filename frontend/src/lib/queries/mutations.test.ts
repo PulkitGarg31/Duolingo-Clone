@@ -582,6 +582,16 @@ describe("league results", () => {
     expect(cachedMe(client).pendingLeagueResult).toEqual(pendingResult);
     expect(client.getQueryData<LeagueOut>(qk.league)?.lastWeekResult?.seen).toBe(false);
   });
+
+  it("reloads me and the league after a failed acknowledgement, in case the result changed", async () => {
+    const client = seededClient();
+    serve({ "POST /me/league/results/31/ack": [() => problem(404, "NOT_FOUND")] });
+
+    await expect(run(client, ackLeagueResultMutation(client), 31)).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    expect(client.getQueryState(qk.me)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(qk.league)?.isInvalidated).toBe(true);
+  });
 });
 
 describe("settings", () => {
@@ -633,9 +643,11 @@ describe("settings", () => {
     expect(invalidated(client, qk.path)).toBe(false);
   });
 
-  it("refreshes everything when the time zone shifted the streak", async () => {
+  // "shifted": the streak moved to the new zone's calendar; "reseeded": the untouched sample history was rebuilt in
+  // the new zone, with new rows and ids (the pending league result's among them).
+  it.each(["shifted", "reseeded"] as const)("refreshes everything when a time zone change reports %s", async (timezoneEffect) => {
     const client = seededClient();
-    serve({ "PATCH /me/settings": [() => json(saved({ timezone: "America/New_York", timezoneEffect: "shifted" }))] });
+    serve({ "PATCH /me/settings": [() => json(saved({ timezone: "America/New_York", timezoneEffect }))] });
 
     await run(client, updateSettingsMutation(client), { timezone: "America/New_York" });
 

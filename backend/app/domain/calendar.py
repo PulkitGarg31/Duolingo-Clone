@@ -51,6 +51,31 @@ def is_valid_timezone(name: str) -> bool:
     return name in _known_timezones()
 
 
+# Old names that browsers still report for some zones (Chrome reports India as "Asia/Calcutta").
+# Storing the current name means the same zone under its old name is never treated as a move.
+_ZONE_ALIASES = {
+    "Asia/Calcutta": "Asia/Kolkata",
+    "Asia/Saigon": "Asia/Ho_Chi_Minh",
+    "Asia/Katmandu": "Asia/Kathmandu",
+    "Asia/Rangoon": "Asia/Yangon",
+    "Asia/Dacca": "Asia/Dhaka",
+    "Asia/Ulan_Bator": "Asia/Ulaanbaatar",
+    "Europe/Kiev": "Europe/Kyiv",
+    "Atlantic/Faeroe": "Atlantic/Faroe",
+    "America/Buenos_Aires": "America/Argentina/Buenos_Aires",
+    "America/Indianapolis": "America/Indiana/Indianapolis",
+    "US/Eastern": "America/New_York",
+    "US/Central": "America/Chicago",
+    "US/Mountain": "America/Denver",
+    "US/Pacific": "America/Los_Angeles",
+}
+
+
+def canonical_timezone(name: str) -> str:
+    """The current IANA name for `name`: an old alias becomes its new name, anything else is kept."""
+    return _ZONE_ALIASES.get(name, name)
+
+
 @cache
 def _known_timezones() -> frozenset[str]:
     # Scanning the time-zone database is slow, and its contents never change while running.

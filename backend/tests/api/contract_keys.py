@@ -351,7 +351,7 @@ UNION_VALUES: dict[str, frozenset[str] | frozenset[int]] = {
     "ShopUnavailableReason": names(
         "HEARTS_ALREADY_FULL MAX_FREEZES_EQUIPPED INSUFFICIENT_GEMS ITEM_UNAVAILABLE"
     ),
-    "TimezoneEffect": names("none shifted"),
+    "TimezoneEffect": names("none shifted reseeded"),
     "QuestSlot": frozenset({1, 2, 3}),
     "QuestIcon": names("bolt book target flame"),
     "AchievementCode": names("wildfire sage scholar sharpshooter champion winner legendary"),

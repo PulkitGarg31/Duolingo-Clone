@@ -407,7 +407,7 @@ The stored state is `StreakState(current, longest, last_date, freezes)`, where `
 - **`credit(state, today)`**, after a completed session that earned XP: a streak covering yesterday grows by one, anything else starts at 1, `longest` follows, and `last_date` becomes today. A second session the same day changes nothing.
 - **`status`**: `inactive` (no streak), `at_risk` (alive but today not done: the grey flame) or `extended` (the orange flame).
 - **Milestones**: 7, 14, 30, 50, 75, 100, 125, 150, 200, 250, 300, 365, then every multiple of 100.
-- **Time zones**: `shift_for_timezone` moves `last_date` by the difference between the learner's local date in the new and the old zone at `now` (usually −1, 0 or +1 day), so a change neither breaks nor inflates the streak. The frontend adopts the device zone once, when `me.user.timezoneConfirmed` is false, with a single settings PATCH; `timezoneEffect: "shifted"` makes the client refetch everything.
+- **Time zones**: the frontend adopts the device zone once, when `me.user.timezoneConfirmed` is false, with a single settings PATCH. If the sample learner is untouched since the seed (no session started and no gem moved at or after `app_state.seeded_at`), the server rebuilds the sample history in the new zone with the demo reset (`reset_demo(..., tz=new_zone)`, back on real time) and answers `timezoneEffect: "reseeded"`: every stored day (XP days, the calendar, quests) is then a day of the visitor's zone. Otherwise, and for later changes, `shift_for_timezone` moves `last_date` by the difference between the learner's local date in the new and the old zone at `now` (usually −1, 0 or +1 day), so a change neither breaks nor inflates the streak (`"shifted"`); stored day snapshots keep their dates. Either effect makes the client refetch everything.
 
 Days are compared as dates, never as "24 hours since", so a 23- or 25-hour DST day is exactly one day. Persistence (`streak_service.py`): `user_stats.streak_*` plus `activity_days`, where credit upserts today's row as `active` with the daily goal in force and settle inserts `frozen` rows for covered days.
 
@@ -515,7 +515,7 @@ TanStack Query's online manager is tied to the gate (`pauseWhileServerAsleep`), 
 | purchase | patches gems, hearts, freezes and boost from the receipt; never optimistic (gems are money); the idempotency key is created in the click handler, so automatic retries reuse it |
 | claim chest | opens the chest optimistically, rolls back on error, takes the gem count from the server |
 | league result ack | closes the modal optimistically, rolls back on error |
-| settings | preferences apply optimistically and roll back on error; a time zone waits for the server; `"shifted"` refetches everything; a new daily goal refetches `me`, quests and activity |
+| settings | preferences apply optimistically and roll back on error; a time zone waits for the server; `"shifted"` or `"reseeded"` refetches everything; a new daily goal refetches `me`, quests and activity |
 | demo tools | never retried (a retried "+5 HOURS" would jump ten hours); refetch everything |
 
 Mutations that fail for good with a network error or a 500 are toasted app-wide with the request id; domain errors (409, 422) are handled by the feature that made the request (a modal, a disabled button, a toast with friendly copy).
