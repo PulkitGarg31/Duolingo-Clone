@@ -1,8 +1,8 @@
 """Demo tools: the learner's own clock, learner tweaks and the reset of the learner's data.
 
-Every tool acts on the caller alone, so each account is a sandbox. The routes are always mounted;
-`require_dev_tools` answers 403 when the tools are switched off. A route that moves the clock
-reports the new instant in the X-Server-Time header.
+Every tool acts on the caller alone, so each learner (account or guest) is a sandbox. The routes
+are always mounted; `require_dev_tools` answers 403 when the tools are switched off. A route that
+moves the clock reports the new instant in the X-Server-Time header.
 """
 
 from fastapi import APIRouter, Depends, Request
@@ -74,9 +74,9 @@ def patch_learner(body: DevLearnerPatchIn, db: DbDep, ctx: CtxDep) -> MeOut:
 
 @router.post("/reset", response_model=DevResetOut, operation_id="resetDemo", summary="Reset my progress")
 def reset_demo(request: Request, db: DbDep, ctx: CtxDep) -> DevResetOut:
-    """Start the caller over with their clock back on real time: the demo learner gets the sample
-    history again, any other account a new account's start. Nobody else is touched. The answer holds
-    the caller's state after the reset."""
+    """Start the caller over with their clock back on real time: a demo learner (a guest or the
+    shared one) gets the sample history again, an account a new account's start. Nobody else is
+    touched. The answer holds the caller's state after the reset."""
     reset = dev_service.reset(db, ctx)
     db.commit()
     request.state.now = reset.ctx.now

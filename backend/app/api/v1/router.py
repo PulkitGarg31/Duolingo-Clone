@@ -10,7 +10,7 @@ API_V1_PREFIX = "/api/v1"
 # Groups the operations in the API docs, in this order.
 OPENAPI_TAGS = [
     {"name": "system", "description": "Health and the server's boot identity."},
-    {"name": "auth", "description": "Accounts: sign up, log in and log out. No token: the demo learner."},
+    {"name": "auth", "description": "Accounts and private demos. No token: the shared demo learner."},
     {"name": "me", "description": "The learner's state, settings and activity history."},
     {"name": "path", "description": "The learning path and its treasure chests."},
     {"name": "sessions", "description": "Lessons, practice, legendary runs and timed practice."},

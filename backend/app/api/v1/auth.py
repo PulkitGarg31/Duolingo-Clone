@@ -1,4 +1,5 @@
-"""Accounts: POST /auth/signup, /auth/login and /auth/logout.
+"""Accounts: POST /auth/signup, /auth/login and /auth/logout, and POST /auth/demo, which gives a
+visitor a private copy of the demo (a guest) with a token of its own.
 
 None of them acts as a learner, so none syncs or sends X-Server-Time. Their instants (when a token
 was issued, when it expires) are real time.
@@ -8,7 +9,7 @@ from fastapi import APIRouter, status
 
 from app.api.deps import BearerTokenDep, DbDep, RealClockDep, SettingsDep
 from app.api.problems import problem_responses
-from app.schemas.auth import AuthOut, LoginIn, LogoutOut, SignupIn
+from app.schemas.auth import AuthOut, DemoIn, LoginIn, LogoutOut, SignupIn
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -51,3 +52,22 @@ def logout(token: BearerTokenDep, db: DbDep, real_clock: RealClockDep) -> Logout
     auth_service.logout(db, token, real_clock.now())
     db.commit()
     return LogoutOut()
+
+
+@router.post(
+    "/demo",
+    response_model=AuthOut,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="startDemo",
+    summary="Start a private demo",
+    responses=problem_responses(422),
+)
+def start_demo(
+    db: DbDep, real_clock: RealClockDep, settings: SettingsDep, body: DemoIn | None = None
+) -> AuthOut:
+    """Create a guest, a private copy of the seeded demo learner with the same sample history, and
+    sign it in. The body is optional: without the device's time zone the guest's days follow the
+    server's seed zone. Guests have no credentials: signing up creates a separate account."""
+    signed_in = auth_service.start_demo(db, body or DemoIn(), real_clock.now(), settings)
+    db.commit()
+    return signed_in

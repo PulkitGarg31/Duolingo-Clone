@@ -12,7 +12,8 @@ from app.schemas.settings import SettingsOut
 
 
 class MeUser(ApiModel):
-    """The learner making the request: an account, or the shared demo learner."""
+    """The learner making the request: an account, a guest (a visitor's private copy of the demo), or
+    the shared demo learner."""
 
     id: int
     username: str
@@ -21,8 +22,8 @@ class MeUser(ApiModel):
     timezone: str
     timezone_confirmed: bool  # the browser's time zone has been adopted once
     joined_at: datetime
-    email: str | None  # null for the demo learner
-    is_demo: bool  # the shared demo learner, served when no token is sent
+    email: str | None  # null for the demo learner and guests
+    is_demo: bool  # a guest or the shared demo learner (served when no token is sent), not an account
 
 
 class MeXp(ApiModel):

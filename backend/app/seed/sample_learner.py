@@ -1,10 +1,13 @@
-"""Learner rows in the database: the sample learner's history, a new account's start, and resets.
+"""Learner rows in the database: the sample learner's history, a guest's and a new account's start,
+and resets.
 
 `apply_sample_learner_state` reads what the plan needs (`load_world`), plans the history with
 `app.seed.history` and writes it with Core statements, then evaluates achievements so the badges can
-never disagree with the data. No service is replayed. A reset only ever touches one learner:
-`reset_demo` wipes the demo learner's data and applies the history again, relative to a new instant,
-and `restart_account` starts any other account over as if it had just signed up.
+never disagree with the data. No service is replayed. The seeded demo learner and every guest (a
+visitor's private copy of the demo) get the same history, each relative to their own instant.
+A reset only ever touches one learner: `reset_demo` wipes a demo learner's data and applies the
+history again, relative to a new instant, and `restart_account` starts an account over as if it had
+just signed up.
 """
 
 from collections.abc import Sequence
@@ -49,7 +52,7 @@ from app.seed.history import (
     plan_sample_learner,
 )
 from app.seed.schema import SampleLearnerFile
-from app.seed.validate import DATA_DIR, load_bundle
+from app.seed.validate import DATA_DIR, SeedBundle, load_bundle
 from app.services import achievement_service, exercises, reference
 
 # ---- reading what the plan needs ----
@@ -86,6 +89,22 @@ def load_world(db: Session, course_id: int) -> SampleWorld:
     return SampleWorld(nodes, shop, bots)
 
 
+def checked_bundle(db: Session, settings: Settings) -> SeedBundle:
+    """The seed files, after checking that they still describe the content in the database.
+
+    The sample history replays on the content in the database, so files changed since the seed (a
+    new version deployed onto an old database) are refused rather than replayed on content they no
+    longer describe.
+    """
+    bundle = load_bundle(DATA_DIR, default_username=settings.default_username)
+    state = system_repo.get_state(db)
+    if state is None or state.seed_version != bundle.version:
+        raise RuntimeError(
+            "the seed files changed since this database was seeded: run `python -m app.seed --reset`"
+        )
+    return bundle
+
+
 # ---- writing ----
 
 
@@ -96,7 +115,7 @@ def apply_sample_learner_state(
 
     The learner must exist with fresh settings and stats and no history. Rows are written with
     Core statements in the caller's transaction (never committed here); then achievements are
-    evaluated, unlocked at `now`.
+    evaluated, unlocked at `now`. The learner's `history_seeded_at` records `now`.
     """
     learner = user_repo.get(db, learner_id)
     if learner is None:
@@ -250,8 +269,13 @@ def _insert_cohort(db: Session, learner_id: int, cohort: PlannedCohort) -> None:
 
 
 def _write_learner(db: Session, learner_id: int, rows: SampleRows, *, now: datetime, tz: str) -> None:
-    """The learner's zone and join date, daily goal, and the counters the history ends with."""
-    db.execute(update(User).where(User.id == learner_id).values(timezone=tz, joined_at=rows.joined_at))
+    """The learner's zone, join date and seed instant, daily goal, and the counters the history ends
+    with."""
+    db.execute(
+        update(User)
+        .where(User.id == learner_id)
+        .values(timezone=tz, joined_at=rows.joined_at, history_seeded_at=now)
+    )
     db.execute(
         update(UserSettings)
         .where(UserSettings.user_id == learner_id)
@@ -282,6 +306,16 @@ def insert_fresh_learner_rows(db: Session, user_ids: Sequence[int], now: datetim
         db.execute(insert(UserStats), [{"user_id": user_id, "updated_at": now} for user_id in user_ids])
 
 
+def start_guest(db: Session, user_id: int, script: SampleLearnerFile, *, now: datetime, tz: str) -> None:
+    """A guest's first rows: fresh settings and stats, then the sample history relative to `now` in
+    `tz`, exactly as the seeded demo learner has it (13-day streak, 820 gems, last week's promotion...).
+
+    The guest's user row must exist, with no rows of its own yet. Runs in the caller's transaction.
+    """
+    insert_fresh_learner_rows(db, [user_id], now)
+    apply_sample_learner_state(db, user_id, script, now=now, tz=tz)
+
+
 def start_new_account(db: Session, user_id: int, now: datetime) -> None:
     """A new account's first rows: default settings, full hearts, no streak, Bronze, no freezes, and
     the opening gems, booked as a `seed` row of the gem ledger so the cached balance matches it.
@@ -305,28 +339,27 @@ def start_new_account(db: Session, user_id: int, now: datetime) -> None:
 # ---- reset ----
 
 
-def reset_demo(db: Session, real_now: datetime, settings: Settings, tz: str | None = None) -> None:
-    """Rebuild the demo learner: wipe their data, put their clock back on real time, and replay the
-    sample history relative to `real_now`, in `tz` (by default their current zone).
+def reset_demo(
+    db: Session, learner_id: int, real_now: datetime, settings: Settings, tz: str | None = None
+) -> None:
+    """Rebuild one demo learner (the seeded learner or a guest): wipe their data, put their clock
+    back on real time, and replay the sample history relative to `real_now`, in `tz` (by default
+    their current zone).
 
     Every other learner, and their cohorts, are left exactly as they are. Content, catalogues and bots
-    stay too. Runs in the caller's transaction.
+    stay too. Rebuilding the seeded learner also moves `app_state.seeded_at`. Runs in the caller's
+    transaction.
     """
-    learner = user_repo.get_by_username(db, settings.default_username)
+    learner = user_repo.get(db, learner_id)
     if learner is None:
-        raise NotFound(f"The learner '{settings.default_username}' doesn't exist.")
-    learner_id, zone = learner.id, tz or learner.timezone
-    bundle = load_bundle(DATA_DIR, default_username=settings.default_username)
-    state = system_repo.get_state(db)
-    if state is None or state.seed_version != bundle.version:
-        # The history replays on the content in the database, which these files no longer describe.
-        raise RuntimeError(
-            "the seed files changed since this database was seeded: run `python -m app.seed --reset`"
-        )
+        raise NotFound("There is no learner with that id.")
+    zone, shared = tz or learner.timezone, learner.username == settings.default_username
+    bundle = checked_bundle(db, settings)
     db.flush()
     _wipe_learner(db, learner_id)
     insert_fresh_learner_rows(db, [learner_id], real_now)
-    system_repo.mark_reseeded(db, seeded_at=real_now)
+    if shared:
+        system_repo.mark_reseeded(db, seeded_at=real_now)
     apply_sample_learner_state(db, learner_id, bundle.sample_learner, now=real_now, tz=zone)
 
 

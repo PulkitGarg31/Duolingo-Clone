@@ -1,4 +1,4 @@
-"""The per-request context every use case receives, and who counts as the demo learner."""
+"""The per-request context every use case receives, and who counts as a demo learner."""
 
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -8,8 +8,9 @@ from app.models import User, UserSettings, UserStats
 
 
 def is_demo_learner(user: User, settings: Settings) -> bool:
-    """Whether `user` is the seeded demo learner, the one a request without a token acts as."""
-    return user.username == settings.default_username
+    """Whether `user` plays the sample demo rather than an account of their own: a guest (a visitor's
+    private copy of the demo) or the shared seeded learner, whom a request without a token acts as."""
+    return user.is_guest or user.username == settings.default_username
 
 
 @dataclass(frozen=True)
@@ -29,7 +30,8 @@ class RequestContext:
 
     @property
     def is_demo(self) -> bool:
-        """Whether the learner is the seeded demo learner rather than an account of their own."""
+        """Whether the learner plays the sample demo (a guest or the shared seeded learner) rather
+        than an account of their own."""
         return is_demo_learner(self.user, self.settings)
 
     @property

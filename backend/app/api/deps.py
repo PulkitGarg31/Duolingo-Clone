@@ -95,7 +95,10 @@ RealClockDep = Annotated[Clock, Depends(get_real_clock)]
 _bearer_scheme = HTTPBearer(
     auto_error=False,
     scheme_name="BearerToken",
-    description="A token from signup or login. Without one, requests act as the shared demo learner.",
+    description=(
+        "A token from signup, login or a private demo (POST /auth/demo). Without one, requests act as"
+        " the shared demo learner."
+    ),
 )
 
 
@@ -147,11 +150,14 @@ def get_current_user(
 ) -> User:
     """The learner making the request, in this order:
 
-    1. a bearer token: its account. An unknown, expired or revoked token is UNAUTHENTICATED, so the
-       client drops it, rather than a quiet switch to the demo learner;
+    1. a bearer token: its account, or its guest (a visitor's private copy of the demo). An unknown,
+       expired or revoked token is UNAUTHENTICATED, so the client drops it, rather than a quiet
+       switch to the demo learner;
     2. where the setting allows it (local runs and tests), an X-User-Id header: that learner, which
        proves per-user isolation;
-    3. otherwise the shared demo learner, so the demo works with no sign-in at all.
+    3. otherwise the shared demo learner, so the API docs and curl work with no sign-in at all. The
+       app never relies on it: a visitor without an account gets a guest token first, so one
+       visitor's lessons never show up for another.
 
     Tokens expire on real time, never on the learner's simulated clock.
     """

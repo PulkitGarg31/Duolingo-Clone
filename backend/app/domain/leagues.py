@@ -2,7 +2,7 @@
 
 A league week is one global window, Monday 00:00 UTC to the next Monday (see `calendar`). Every
 learner competes in private cohorts: for each (tier, week) they earn XP in, themselves plus bots drawn
-from the pool for them, so each account is a sandbox whose time travel moves no one else's board.
+from the pool for them, so each learner is a sandbox whose time travel moves no one else's board.
 Leagues open after LEAGUE_UNLOCK_SESSIONS completed sessions of any kind.
 """
 

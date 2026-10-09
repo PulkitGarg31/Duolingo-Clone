@@ -702,6 +702,17 @@ def test_credentials_come_as_a_lowercased_pair(
         db.flush()
 
 
+def test_a_guest_never_has_credentials(db: Session, world: World) -> None:
+    hashed = "scrypt$16384$8$1$c2FsdA==$aGFzaA=="
+    db.add(other_learner(world, "guest_0123456789", is_guest=True))  # a guest: no email, no password
+    db.flush()
+    db.add(
+        other_learner(world, "guest_abcdef0123", is_guest=True, email="ana@example.com", password_hash=hashed)
+    )
+    with check_fails("ck_users_guest_without_credentials"):
+        db.flush()
+
+
 def test_one_account_per_email(db: Session, world: World) -> None:
     hashed = "scrypt$16384$8$1$c2FsdA==$aGFzaA=="
     db.add(other_learner(world, "ana", email="ana@example.com", password_hash=hashed))

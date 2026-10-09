@@ -14,7 +14,7 @@ def email_taken(db: Session, email: str) -> bool:
 
 
 def account_by_email(db: Session, email: str) -> User | None:
-    """The account with this (lowercased) email; the demo learner and the bots have none."""
+    """The account with this (lowercased) email; the demo learner, guests and bots have none."""
     return db.scalar(select(User).where(User.email == email))
 
 

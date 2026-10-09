@@ -61,7 +61,8 @@ def build_me(db: Session, ctx: RequestContext, league_week: LeagueWeek | None = 
 
 
 def me_user(user: User, settings: Settings) -> MeUser:
-    """Who the learner is: their name, zone and email, and whether they are the shared demo learner."""
+    """Who the learner is: their name, zone and email, and whether they play the demo (a guest or the
+    shared demo learner) rather than an account."""
     return MeUser(
         id=user.id,
         username=user.username,

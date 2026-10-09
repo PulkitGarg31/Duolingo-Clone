@@ -149,6 +149,7 @@ INTERFACE_KEYS: dict[str, frozenset[str]] = {
     # ---- auth ----
     "SignupIn": names("displayName email password timezone"),
     "LoginIn": names("email password"),
+    "DemoIn": names("timezone"),
     "AuthOut": names("token expiresAt user"),
     "LogoutOut": names("loggedOut"),
     # ---- errors ----
@@ -183,9 +184,9 @@ CONTRACT_KEYS: dict[str, frozenset[str]] = {**INTERFACE_KEYS, **INLINE_OBJECT_KE
 
 # The bodies a client sends; every other object of the contract is something the API answers with.
 REQUEST_BODIES: frozenset[str] = names(
-    "StartSessionIn SettingsPatchIn PurchaseIn ClockAdvanceIn DevLearnerPatchIn SignupIn LoginIn MatchPairIn"
-    " MultipleChoiceAnswer FillBlankAnswer TranslateAnswer MatchPairsAnswer TypeAnswerAnswer SkipAnswer"
-    " CantListenAnswer"
+    "StartSessionIn SettingsPatchIn PurchaseIn ClockAdvanceIn DevLearnerPatchIn SignupIn LoginIn DemoIn"
+    " MatchPairIn MultipleChoiceAnswer FillBlankAnswer TranslateAnswer MatchPairsAnswer TypeAnswerAnswer"
+    " SkipAnswer CantListenAnswer"
 )
 
 # The fields that hold another object of the contract, by the type they hold. "X[]" is an array of X,
@@ -284,6 +285,7 @@ ENDPOINTS: dict[str, tuple[str, str, str]] = {
     "signup": ("POST", "/auth/signup", "AuthOut"),
     "login": ("POST", "/auth/login", "AuthOut"),
     "logout": ("POST", "/auth/logout", "LogoutOut"),
+    "startDemo": ("POST", "/auth/demo", "AuthOut"),
     "getMe": ("GET", "/me", "MeOut"),
     "getSettings": ("GET", "/me/settings", "SettingsOut"),
     "updateSettings": ("PATCH", "/me/settings", "SettingsUpdateOut"),

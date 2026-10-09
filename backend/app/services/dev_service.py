@@ -1,9 +1,10 @@
 """Demo tools: the learner's own clock, learner tweaks and the reset of the learner's data.
 
-Every account is a sandbox: simulated time is real time plus the learner's own offset, which only
-ever grows, so rows written earlier can never end up in the future. A jump adds to the caller's
-offset and then runs the same catch-up every request runs, at the new `now`; resetting the caller's
-progress is the only way back to real time. No tool here touches another learner.
+Every learner (account or guest) is a sandbox: simulated time is real time plus the learner's own
+offset, which only ever grows, so rows written earlier can never end up in the future. A jump adds
+to the caller's offset and then runs the same catch-up every request runs, at the new `now`;
+resetting the caller's progress is the only way back to real time. No tool here touches another
+learner.
 """
 
 import math
@@ -92,12 +93,13 @@ def patch_learner(db: Session, ctx: RequestContext, patch: DevLearnerPatchIn) ->
 def reset(db: Session, ctx: RequestContext) -> DemoReset:
     """Start the caller over and put their clock back on real time; nobody else is touched.
 
-    The demo learner gets the sample history again, in their current time zone; any other account
-    starts over as a new account. Returns the caller's context at real time, read back after the reset.
+    A demo learner (the shared seeded learner or a guest) gets the sample history again, in their
+    current time zone; an account starts over as a new account. Returns the caller's context at real
+    time, read back after the reset.
     """
     real_now = ctx.now - timedelta(seconds=ctx.user.clock_offset_seconds)
     if ctx.is_demo:
-        reset_demo(db, real_now, ctx.settings)
+        reset_demo(db, ctx.user.id, real_now, ctx.settings)
     else:
         restart_account(db, ctx.user.id, real_now)
     db.flush()

@@ -1,4 +1,4 @@
-"""Accounts under /auth: sign up, log in and log out."""
+"""Accounts under /auth: sign up, log in, log out, and a guest's private demo."""
 
 from datetime import datetime
 from typing import Annotated, Literal
@@ -60,8 +60,16 @@ class LoginIn(ApiModel):
     password: Annotated[str, Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)]
 
 
+class DemoIn(ApiModel):
+    """A private copy of the demo. The time zone is the device's; without one, days follow the
+    server's seed zone until the app adopts the device's zone."""
+
+    timezone: IanaTimezone | None = None
+
+
 class AuthOut(ApiModel):
-    """A signed-in session: send the token as `Authorization: Bearer <token>` until it expires."""
+    """A signed-in session (an account's or a guest's): send the token as
+    `Authorization: Bearer <token>` until it expires."""
 
     token: str
     expires_at: datetime

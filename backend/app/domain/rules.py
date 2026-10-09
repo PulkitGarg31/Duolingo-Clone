@@ -96,6 +96,8 @@ BOT_SESSION_XP: Final[tuple[int, ...]] = (10, 11, 12, 13, 14, 15, 15, 20)  # XP 
 
 # ---- accounts ----
 NEW_ACCOUNT_GEMS: Final = 500  # a new account's opening balance, booked as a `seed` gem ledger row
+# Guests (private demo copies) kept at once: starting one more deletes the oldest beyond the cap.
+MAX_GUESTS: Final = 500
 # The colours a new account's avatar is drawn from: the ones the seeded learners and bots wear.
 AVATAR_COLORS: Final[tuple[str, ...]] = (
     "#58CC02",

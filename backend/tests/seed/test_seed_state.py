@@ -667,7 +667,7 @@ class TestReset:
     def test_rebuilds_the_demo_relative_to_real_now(self, seeded_db: Session, learner: User) -> None:
         seeded_db.execute(update(User).where(User.id == learner.id).values(clock_offset_seconds=86_400))
         seeded_db.execute(update(UserStats).where(UserStats.user_id == learner.id).values(gems=5))
-        reset_demo(seeded_db, self.LATER, api_settings("sqlite://"))
+        reset_demo(seeded_db, learner.id, self.LATER, api_settings("sqlite://"))
         seeded_db.commit()
 
         later_day = local_date(self.LATER, ZONE)
@@ -694,7 +694,7 @@ class TestReset:
     def test_keeps_content_bots_and_the_zone_confirmation(self, seeded_db: Session, learner: User) -> None:
         counts_before = table_counts(seeded_db)
         seeded_db.execute(update(User).where(User.id == learner.id).values(timezone_confirmed=True))
-        reset_demo(seeded_db, self.LATER, api_settings("sqlite://"))
+        reset_demo(seeded_db, learner.id, self.LATER, api_settings("sqlite://"))
         seeded_db.commit()
         counts_after = table_counts(seeded_db)
         for table in ("courses", "path_nodes", "exercises", "glossary_terms", "users", "bot_profiles"):
@@ -703,7 +703,7 @@ class TestReset:
         assert user is not None and (user.timezone, user.timezone_confirmed) == (ZONE, True)
 
     def test_can_replay_the_history_in_another_zone(self, seeded_db: Session, learner: User) -> None:
-        reset_demo(seeded_db, self.LATER, api_settings("sqlite://"), tz="America/Los_Angeles")
+        reset_demo(seeded_db, learner.id, self.LATER, api_settings("sqlite://"), tz="America/Los_Angeles")
         seeded_db.commit()
         user = seeded_db.get(User, learner.id)
         assert user is not None and user.stats is not None
@@ -734,7 +734,7 @@ class TestReset:
             .values(hearts=2, hearts_regen_anchor_at=FROZEN_NOW, gems=0)
         )
         seeded_db.execute(update(User).where(User.id == sam_id).values(clock_offset_seconds=3600))
-        reset_demo(seeded_db, self.LATER, api_settings("sqlite://"))
+        reset_demo(seeded_db, learner.id, self.LATER, api_settings("sqlite://"))
         seeded_db.commit()
         seeded_db.expire_all()
         stats = seeded_db.get(UserStats, sam_id)

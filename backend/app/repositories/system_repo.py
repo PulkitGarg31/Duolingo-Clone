@@ -16,5 +16,5 @@ def get_state(db: Session) -> AppState | None:
 
 
 def mark_reseeded(db: Session, *, seeded_at: datetime) -> None:
-    """Record that the demo learner's history was re-seeded at `seeded_at` (real time)."""
+    """Record that the shared demo learner's history was re-seeded at `seeded_at` (real time)."""
     db.execute(update(AppState).where(AppState.id == APP_STATE_ID).values(seeded_at=seeded_at))

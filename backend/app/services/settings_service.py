@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.domain.calendar import local_date
 from app.domain.enums import ActivityKind, TimezoneEffect
 from app.models import User, UserSettings
-from app.repositories import ledger_repo, play_repo, system_repo
+from app.repositories import ledger_repo, play_repo
 from app.schemas.settings import SettingsOut, SettingsPatchIn, SettingsUpdateOut
 from app.seed.sample_learner import reset_demo
 from app.services import streak_service
@@ -18,7 +18,7 @@ from app.services.context import RequestContext
 @dataclass(frozen=True)
 class SettingsUpdate:
     """The answer to a PATCH, and the request's instant after it: rebuilding the sample history puts
-    the demo learner's clock back on real time, as their reset does."""
+    a demo learner's clock back on real time, as their reset does."""
 
     out: SettingsUpdateOut
     now: datetime
@@ -74,11 +74,12 @@ def update(db: Session, ctx: RequestContext, patch: SettingsPatchIn) -> Settings
 def change_timezone(db: Session, ctx: RequestContext, new_timezone: str) -> TimezoneChange:
     """Adopt a time zone and mark it as confirmed (the app adopts the device's zone once).
 
-    The same zone is only confirmed. A new zone for the sample learner, who has never confirmed one and
-    has neither played nor spent since the demo was seeded, rebuilds the sample history in that zone,
-    so every stored day (XP, calendar, quests) is a day of the new zone. Any other new zone shifts the
-    streak's last covered day by the day difference between the two zones, so the streak is neither
-    broken nor inflated; the days already stored keep their dates.
+    The same zone is only confirmed. A new zone for a demo learner (the shared seeded learner or a
+    guest) who has never confirmed one and has neither played nor spent since their sample history
+    was written rebuilds that learner's history in that zone, so every stored day (XP, calendar,
+    quests) is a day of the new zone. Any other new zone shifts the streak's last covered day by the
+    day difference between the two zones, so the streak is neither broken nor inflated; the days
+    already stored keep their dates.
     """
     user = ctx.user
     if new_timezone == user.timezone:
@@ -92,7 +93,7 @@ def change_timezone(db: Session, ctx: RequestContext, new_timezone: str) -> Time
 
 
 def learner_is_pristine(db: Session, user_id: int, seeded_at: datetime) -> bool:
-    """Whether the learner has neither started a session nor moved gems since the demo was seeded."""
+    """Whether the learner has neither started a session nor moved gems since `seeded_at`."""
     return not (
         play_repo.started_since(db, user_id, seeded_at)
         or ledger_repo.gems_moved_since(db, user_id, seeded_at)
@@ -100,20 +101,20 @@ def learner_is_pristine(db: Session, user_id: int, seeded_at: datetime) -> bool:
 
 
 def _is_untouched_sample_learner(db: Session, ctx: RequestContext) -> bool:
-    """Whether the learner is the seeded sample learner, untouched since the seed.
+    """Whether the learner is a demo learner untouched since their sample history was written.
 
-    Only the sample learner has a seeded history to rebuild; an account's history is its own, and a
-    rebuild would erase what they did.
+    Only a demo learner (the shared seeded learner or a guest) has a seeded history to rebuild; an
+    account's history is its own, and a rebuild would erase what they did.
     """
-    state = system_repo.get_state(db)
-    return state is not None and ctx.is_demo and learner_is_pristine(db, ctx.user.id, state.seeded_at)
+    seeded_at = ctx.user.history_seeded_at
+    return ctx.is_demo and seeded_at is not None and learner_is_pristine(db, ctx.user.id, seeded_at)
 
 
 def _rebuild_sample_history(db: Session, ctx: RequestContext, new_timezone: str) -> RequestContext:
-    """Re-seed the demo learner with the sample history replayed in `new_timezone`, relative to real
+    """Re-seed this demo learner with the sample history replayed in `new_timezone`, relative to real
     time, and return the request context afterwards, with the new zone confirmed."""
     real_now = ctx.now - timedelta(seconds=ctx.user.clock_offset_seconds)
-    reset_demo(db, real_now, ctx.settings, tz=new_timezone)
+    reset_demo(db, ctx.user.id, real_now, ctx.settings, tz=new_timezone)
     db.flush()
     db.expire_all()  # the rebuild rewrote rows with bulk statements: read them back from the database
     user = ctx.user
