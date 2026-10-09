@@ -1,5 +1,6 @@
-"""The demo clock: simulated time is real time plus a forward-only offset, and every jump catches the
-learner up exactly as a request would (hearts, streak freezes or loss, league weeks, idle sessions).
+"""The learner's clock: simulated time is real time plus the learner's own forward-only offset, and
+every jump catches the learner up exactly as a request would (hearts, streak freezes or loss, league
+weeks, idle sessions). Other learners keep their own clocks (see test_account_isolation.py).
 
 At the frozen instant it is Thursday 2026-10-08, 17:30 in Kolkata. The seeded streak (13 days) last
 covered yesterday, with one Streak Freeze equipped.
@@ -11,7 +12,7 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from app.domain.enums import GemReason
-from app.models import AppState, GemTransaction
+from app.models import GemTransaction, User
 from tests.helpers import (
     API,
     Json,
@@ -42,9 +43,10 @@ def jump(client: TestClient, path: str, body: Json | None = None) -> Json:
     return change
 
 
-def offset(engine: Engine) -> int:
+def offset(engine: Engine, username: str = "alex") -> int:
+    """How far the learner's own clock runs ahead of real time, as stored."""
     with Session(engine) as db:
-        return db.scalars(select(AppState.clock_offset_seconds)).one()
+        return db.scalars(select(User.clock_offset_seconds).where(User.username == username)).one()
 
 
 def day_states(client: TestClient) -> dict[str, str]:
@@ -178,7 +180,7 @@ def test_the_clock_only_ever_moves_forward(client: TestClient, seeded_engine: En
     jump(client, "next-week")
     offsets.append(offset(seeded_engine))
     assert offsets == sorted(set(offsets))  # strictly increasing
-    # Besides these jumps, the demo reset is the only way back to real time: nothing sets the offset.
+    # Besides these jumps, the learner's reset is the only way back to real time: nothing sets the offset.
     paths = client.get(f"{API}/openapi.json").json()["paths"]
     routes = {(method.upper(), path) for path, item in paths.items() for method in item if "/dev/" in path}
     assert routes == DEV_ROUTES

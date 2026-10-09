@@ -106,4 +106,5 @@ def test_the_seed_instant_itself_ranks_the_learner_inside_the_promotion_zone(
     finished = rows.cohorts[0]
     start, end = league_week_bounds(finished.week_start)
     earned = sum(line.amount for s in rows.sessions if start <= s.ended_at < end for line in s.xp_lines)
-    assert last_week_result(rows, learner_id) == (LeagueOutcome.PROMOTED, 14, earned)
+    # The bots of the learner's own cohort are drawn for them, so the exact rank follows from their id.
+    assert last_week_result(rows, learner_id) == (LeagueOutcome.PROMOTED, 15, earned)

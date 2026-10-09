@@ -5,11 +5,13 @@ It is never stored or cached: the completion response attaches a newly built one
 
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings
 from app.domain import streak, xp
 from app.domain.calendar import league_week_bounds, league_week_start
 from app.domain.enums import StreakStatus
 from app.domain.rules import MAX_STREAK_FREEZES, XP_BOOST_MULTIPLIER
-from app.repositories import ledger_repo, play_repo, system_repo
+from app.models import User
+from app.repositories import ledger_repo, play_repo
 from app.schemas.me import (
     ActiveSessionRef,
     DailyGoalOut,
@@ -21,7 +23,7 @@ from app.schemas.me import (
     XpBoostOut,
 )
 from app.services import hearts_service, league_service, path_service, settings_service, streak_service
-from app.services.context import RequestContext
+from app.services.context import RequestContext, is_demo_learner
 from app.services.league_service import LeagueWeek
 
 
@@ -36,7 +38,7 @@ def build_me(db: Session, ctx: RequestContext, league_week: LeagueWeek | None = 
     goal = ctx.preferences.daily_goal_xp
     active = play_repo.active_session(db, user.id)
     return MeOut(
-        user=MeUser.model_validate(user),
+        user=me_user(user, ctx.settings),
         course=path_service.course_brief(path_service.course_of(db, user)),
         server_now=ctx.now,
         local_date=ctx.today,
@@ -52,9 +54,24 @@ def build_me(db: Session, ctx: RequestContext, league_week: LeagueWeek | None = 
         else ActiveSessionRef(id=active.id, kind=active.kind, node_id=active.node_id),
         pending_league_result=league_service.pending_result(db, user.id),
         settings=settings_service.settings_out(user, ctx.preferences),
-        dev=DevInfo(enabled=True, clock_offset_seconds=system_repo.offset_seconds(db))
+        dev=DevInfo(enabled=True, clock_offset_seconds=user.clock_offset_seconds)
         if ctx.settings.enable_dev_tools
         else None,
+    )
+
+
+def me_user(user: User, settings: Settings) -> MeUser:
+    """Who the learner is: their name, zone and email, and whether they are the shared demo learner."""
+    return MeUser(
+        id=user.id,
+        username=user.username,
+        display_name=user.display_name,
+        avatar_color=user.avatar_color,
+        timezone=user.timezone,
+        timezone_confirmed=user.timezone_confirmed,
+        joined_at=user.joined_at,
+        email=user.email,
+        is_demo=is_demo_learner(user, settings),
     )
 
 

@@ -1,9 +1,10 @@
 """Leagues: joining this week's cohort, live standings, weekly finalization and the league views.
 
-A league week is one global window (Monday 00:00 UTC). Once leagues are unlocked, a learner joins
-the cohort of their tier with the week's first XP. Bots fill the cohort and earn XP from a pure
-schedule, so the board moves with time and writes nothing. Ended weeks are finalized lazily by the
-sync, oldest first, which is also when learners move up or down a tier.
+A league week is one global window (Monday 00:00 UTC). Once leagues are unlocked, a learner opens
+their own cohort of their tier with the week's first XP: every learner competes in private cohorts,
+so one account's time travel never moves another's board. Bots fill the cohort and earn XP from a
+pure schedule, so the board moves with time and writes nothing. Ended weeks are finalized lazily by
+the learner's own sync, oldest first, which is also when they move up or down a tier.
 """
 
 from dataclasses import dataclass
@@ -70,8 +71,8 @@ class LeagueWeek:
 def ensure_membership(db: Session, ctx: RequestContext) -> LeagueJoin | None:
     """Join this week's cohort of the learner's tier on the week's first XP.
 
-    Returns None while leagues are locked (fewer than 10 completed sessions). The first learner of
-    a (tier, week) opens its cohort, which also draws the bots.
+    Returns None while leagues are locked (fewer than 10 completed sessions). Joining opens the
+    learner's own cohort for the (tier, week), which also draws its bots.
     """
     if not leagues.leagues_unlocked(play_repo.count_completed_sessions(db, ctx.user.id)):
         return None
@@ -79,8 +80,8 @@ def ensure_membership(db: Session, ctx: RequestContext) -> LeagueJoin | None:
     existing = league_repo.membership_for_week(db, ctx.user.id, week)
     if existing is not None:
         return LeagueJoin(joined_now=False, membership=existing)
-    tier = ctx.stats.league_tier
-    cohort = league_repo.get_cohort(db, tier, week) or _open_cohort(db, tier, week, ctx.now)
+    tier, owner = ctx.stats.league_tier, ctx.user.id
+    cohort = league_repo.get_cohort(db, owner, tier, week) or _open_cohort(db, owner, tier, week, ctx.now)
     membership = LeagueMembership(cohort_id=cohort.id, user_id=ctx.user.id, joined_at=ctx.now)
     db.add(membership)
     return LeagueJoin(joined_now=True, membership=membership)
@@ -125,18 +126,19 @@ def current_standing(db: Session, user_id: int, now: datetime) -> CohortStanding
 # ---- finalizing ended weeks ----
 
 
-def finalize_due(db: Session, now: datetime) -> list[LeagueMembership]:
-    """Finalize every cohort whose week has ended, oldest week first (the sync's first step).
+def finalize_due(db: Session, owner_id: int, now: datetime) -> list[LeagueMembership]:
+    """Finalize the learner's cohorts whose week has ended by `now`, oldest week first (the sync's
+    first step). Other learners' cohorts wait for their own sync, on their own clock.
 
-    Every member, bots included, gets a final XP, rank and outcome; learners move to the tier their
-    outcome gives and have their league achievements re-evaluated. A learner who earned nothing that
-    week has no membership, so a skipped week never demotes. Returns the learners' results.
+    Every member, bots included, gets a final XP, rank and outcome; the learner moves to the tier
+    their outcome gives and has their league achievements re-evaluated. A learner who earned nothing
+    that week has no cohort, so a skipped week never demotes. Returns the learner's results.
     """
     results: list[LeagueMembership] = []
-    for cohort in league_repo.open_cohorts_before(db, league_week_start(now)):
+    for cohort in league_repo.open_cohorts_before(db, owner_id, league_week_start(now)):
         results += _finalize(db, cohort, now)
-    for user_id in {membership.user_id for membership in results}:
-        achievement_service.evaluate(db, user_id, now, session_id=None)
+    if results:
+        achievement_service.evaluate(db, owner_id, now, session_id=None)
     return results
 
 
@@ -261,15 +263,15 @@ def badge(league: LeagueRow) -> LeagueBrief:
 # ---- helpers ----
 
 
-def _open_cohort(db: Session, tier: int, week: date, now: datetime) -> LeagueCohort:
-    """Create the (tier, week) cohort with its bots, drawn the same way in every process."""
-    cohort = LeagueCohort(league_tier=tier, week_start=week, created_at=now)
+def _open_cohort(db: Session, owner_id: int, tier: int, week: date, now: datetime) -> LeagueCohort:
+    """Create the learner's (tier, week) cohort with its bots, drawn the same way in every process."""
+    cohort = LeagueCohort(owner_user_id=owner_id, league_tier=tier, week_start=week, created_at=now)
     db.add(cohort)
     db.flush()  # the bots' memberships need the cohort's id
     week_start, _ = league_week_bounds(week)
     db.add_all(
         LeagueMembership(cohort_id=cohort.id, user_id=bot_id, joined_at=week_start)
-        for bot_id in leagues.draw_bots(user_repo.bot_ids(db), tier, week)
+        for bot_id in leagues.draw_bots(user_repo.bot_ids(db), tier, week, owner_id=owner_id)
     )
     return cohort
 

@@ -1,8 +1,9 @@
 """League rules: ranking a cohort, its promotion and demotion zones, and the outcome of a week.
 
-A league week is one global window, Monday 00:00 UTC to the next Monday (see `calendar`). Each
-(tier, week) has one cohort: the learners who earned XP in that tier that week, plus bots drawn
-from the pool. Leagues open after LEAGUE_UNLOCK_SESSIONS completed sessions of any kind.
+A league week is one global window, Monday 00:00 UTC to the next Monday (see `calendar`). Every
+learner competes in private cohorts: for each (tier, week) they earn XP in, themselves plus bots drawn
+from the pool for them, so each account is a sandbox whose time travel moves no one else's board.
+Leagues open after LEAGUE_UNLOCK_SESSIONS completed sessions of any kind.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
@@ -109,11 +110,14 @@ def xp_to_pass_next(ranked: Sequence[Ranked], user_id: int) -> int | None:
     return None
 
 
-def draw_bots(bot_ids: Iterable[int], tier: int, week_start: date, k: int = BOTS_PER_COHORT) -> list[int]:
-    """The bots that fill a (tier, week) cohort: a uniform draw, the same in every process.
+def draw_bots(
+    bot_ids: Iterable[int], tier: int, week_start: date, *, owner_id: int, k: int = BOTS_PER_COHORT
+) -> list[int]:
+    """The bots that fill a learner's (tier, week) cohort: a uniform draw, the same in every process.
 
-    The draw depends only on the tier and the week, so a promotion brings new rivals. The pool is
-    sorted first, so the order it arrives in doesn't matter; a pool smaller than `k` is used whole.
+    The draw depends only on the owner, the tier and the week, so a promotion brings new rivals and
+    two learners rarely face the same field. The pool is sorted first, so the order it arrives in
+    doesn't matter; a pool smaller than `k` is used whole.
     """
     pool = sorted(bot_ids)
-    return rng_for("cohort", tier, week_start.isoformat()).sample(pool, min(k, len(pool)))
+    return rng_for("cohort", owner_id, tier, week_start.isoformat()).sample(pool, min(k, len(pool)))

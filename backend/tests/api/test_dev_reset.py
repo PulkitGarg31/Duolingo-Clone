@@ -1,5 +1,6 @@
-"""POST /dev/reset: every learner's data is deleted, the clock returns to real time and the sample
-learner's history is replayed relative to the real instant. Content, catalogues and bots stay.
+"""POST /dev/reset starts the caller over, and only the caller: their clock returns to real time, the
+demo learner's sample history is replayed relative to the real instant, and any other learner starts
+again as a new account. Other learners, content, catalogues and bots stay as they are.
 """
 
 from fastapi.testclient import TestClient
@@ -7,6 +8,7 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from app.core.clock import FrozenClock
+from app.domain.enums import GemReason
 from app.models import (
     Achievement,
     AchievementTier,
@@ -100,19 +102,52 @@ def test_a_reset_rebuilds_the_demo_at_real_time(
     assert (drinks["state"], drinks["lessonsCompleted"]) == ("active", 1)  # the lesson played earlier is gone
 
 
-def test_a_reset_wipes_every_learners_data(client: TestClient, seeded_engine: Engine, learner2: int) -> None:
+def test_another_learner_starts_over_as_a_new_account(
+    client: TestClient, seeded_engine: Engine, learner2: int
+) -> None:
     theirs = as_user(learner2)
     play_lesson(client, seeded_engine, node_at(client, 1, 1, headers=theirs), headers=theirs)
-    set_learner(client, hearts=2, gems=500, headers=theirs)
+    set_learner(client, hearts=2, gems=900, headers=theirs)
+    assert client.post(f"{API}/dev/clock/advance", json={"hours": 2}, headers=theirs).status_code == 200
 
     me = reset(client, headers=theirs)["me"]  # the caller's own, fresh state
     assert (me["user"]["id"], me["user"]["username"]) == (learner2, "sam")
-    assert (me["xp"]["total"], me["gems"], me["hearts"]["current"], me["streak"]["current"]) == (0, 0, 5, 0)
+    assert (me["xp"]["total"], me["gems"], me["hearts"]["current"], me["streak"]["current"]) == (0, 500, 5, 0)
+    assert (me["serverNow"], me["dev"]["clockOffsetSeconds"]) == ("2026-10-08T12:00:00Z", 0)
     with Session(seeded_engine) as db:
-        for model in (LessonSession, XpEvent, GemTransaction):
+        for model in (LessonSession, XpEvent):
             assert db.scalar(select(func.count()).select_from(model).where(model.user_id == learner2)) == 0
+        gems = db.execute(
+            select(GemTransaction.reason, GemTransaction.delta).where(GemTransaction.user_id == learner2)
+        ).all()
+        assert [tuple(row) for row in gems] == [(GemReason.SEED, 500)]  # a new account's opening balance
+    first = client.get(f"{API}/me/path", headers=theirs).json()["units"][0]["nodes"][0]
+    assert (first["state"], first["lessonsCompleted"]) == ("active", 0)  # back to the first lesson
     sample = get_me(client)
     assert (sample["xp"]["total"], sample["gems"]) == (373, 820)
+
+
+def test_the_demo_reset_leaves_other_learners_alone(
+    client: TestClient, seeded_engine: Engine, learner2: int
+) -> None:
+    theirs = as_user(learner2)
+    played = play_lesson(client, seeded_engine, node_at(client, 1, 1, headers=theirs), headers=theirs)
+    assert client.post(f"{API}/dev/clock/advance", json={"hours": 3}, headers=theirs).status_code == 200
+    before = get_me(client, headers=theirs)
+
+    reset(client)  # the demo learner starts over
+
+    after = get_me(client, headers=theirs)
+    earned = played["xp"]["total"]
+    assert after["xp"] == before["xp"] == {"total": earned, "today": earned, "thisWeek": earned}
+    assert (after["gems"], after["serverNow"], after["dev"]) == (
+        before["gems"],
+        "2026-10-08T15:00:00Z",  # their clock still runs three hours ahead
+        {"enabled": True, "clockOffsetSeconds": 3 * 3600},
+    )
+    theirs_only = select(func.count()).select_from(LessonSession).where(LessonSession.user_id == learner2)
+    with Session(seeded_engine) as db:
+        assert db.scalar(theirs_only) == 1
 
 
 def test_a_reset_keeps_the_content_and_the_bots(client: TestClient, seeded_engine: Engine) -> None:

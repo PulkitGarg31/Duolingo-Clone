@@ -1,4 +1,4 @@
-"""A tour of all 27 endpoints on the seeded demo: every answer, nested objects included, has the
+"""A tour of all 30 endpoints on the seeded demo: every answer, nested objects included, has the
 recorded contract shape, and every instant in it is written in UTC with a "Z".
 """
 
@@ -211,6 +211,18 @@ def tour_the_dev_tools(tour: EndpointTour) -> None:
     tour.call("resetDemo")
 
 
+def tour_the_accounts(tour: EndpointTour) -> None:
+    """Sign up, log out and log back in; the new account's token works like any other."""
+    credentials = {"email": "ana@example.com", "password": "correct horse battery"}
+    signed_up = tour.call(
+        "signup", expect=201, body={"displayName": "Ana", "timezone": "Europe/Madrid", **credentials}
+    )
+    bearer = {"Authorization": f"Bearer {signed_up['token']}"}
+    assert tour.call("getMe", headers=bearer)["user"]["email"] == "ana@example.com"
+    tour.call("logout", headers=bearer)
+    tour.call("login", body=credentials)
+
+
 def test_every_endpoint_answers_in_the_contract_shape(
     client: TestClient, clock: FrozenClock, seeded_engine: Engine
 ) -> None:
@@ -219,6 +231,7 @@ def test_every_endpoint_answers_in_the_contract_shape(
     tour_the_shop(tour)
     tour_the_lesson_loop(tour, seeded_engine, path, clock)
     tour_the_dev_tools(tour)
+    tour_the_accounts(tour)
 
     assert tour.operations == set(ENDPOINTS)
     answer_types = set(CONTRACT_KEYS) - REQUEST_BODIES - {"CompletionReceipt", "ProblemDetails", "FieldError"}

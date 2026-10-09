@@ -554,16 +554,17 @@ def _cohort(
     learner_id: int,
     finished_at: datetime | None,
 ) -> PlannedCohort | None:
-    """The learner's cohort for one league week, finished at `finished_at`, or None if they never joined.
+    """The learner's own cohort for one league week, finished at `finished_at`, or None if they never
+    joined.
 
-    Bots are drawn as live and join at the week's start. A finished week ranks the learner's XP in
-    the week window against each bot's week, computed up to the week's end.
+    Bots are drawn as live, for this learner, and join at the week's start. A finished week ranks the
+    learner's XP in the week window against each bot's week, computed up to the week's end.
     """
     start, end = league_week_bounds(week)
     joins = [s.ended_at for s in eligible if start <= s.ended_at < end and s.xp_lines]
     if not joins:
         return None
-    drawn = set(leagues.draw_bots([bot.user_id for bot in bots], tier, week))
+    drawn = set(leagues.draw_bots([bot.user_id for bot in bots], tier, week, owner_id=learner_id))
     rivals = [bot for bot in bots if bot.user_id in drawn]
     if finished_at is None:
         members = [

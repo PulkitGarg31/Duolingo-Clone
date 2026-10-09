@@ -13,5 +13,5 @@ class HealthOut(ApiModel):
     seeded: bool
     boot_id: str
     booted_at: datetime
-    server_time: datetime  # real time plus the demo clock offset
+    server_time: datetime  # real time: simulated time is each learner's own
     version: str

@@ -34,6 +34,29 @@ def as_user(user_id: int) -> dict[str, str]:
     return {"X-User-Id": str(user_id)}
 
 
+def bearer(token: str) -> dict[str, str]:
+    """Request headers that act as the account this token was issued to."""
+    return {"Authorization": f"Bearer {token}"}
+
+
+def signup(
+    client: TestClient,
+    email: str,
+    *,
+    password: str = "correct horse battery",
+    display_name: str = "Ana",
+    timezone: str | None = "Europe/Madrid",
+) -> Json:
+    """Create an account through the API and return the answer: its token and its user."""
+    body: Json = {"displayName": display_name, "email": email, "password": password}
+    if timezone is not None:
+        body["timezone"] = timezone
+    response = client.post(f"{API}/auth/signup", json=body)
+    assert response.status_code == 201, response.text
+    signed_up: Json = response.json()
+    return signed_up
+
+
 def assert_problem(response: httpx2.Response, status: int, code: str) -> Json:
     """Assert an RFC 9457 problem document with this status and code, and return its body."""
     assert response.status_code == status, response.text

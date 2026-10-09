@@ -1,4 +1,5 @@
-"""Weekly leagues: the tier ladder, one cohort per tier and UTC week, and each member's result."""
+"""Weekly leagues: the tier ladder, each learner's private cohort per tier and UTC week, and each
+member's result."""
 
 from __future__ import annotations
 
@@ -34,15 +35,18 @@ class League(Base):
 
 
 class LeagueCohort(Base):
-    """The competition group of one tier in one league week (which starts Monday 00:00 UTC).
+    """One learner's competition group of one tier in one league week (which starts Monday 00:00 UTC).
 
-    Cohorts are finalized lazily, one week at a time, after the week has ended.
+    Every human competes in private cohorts: themselves and the bots drawn for them, so one learner's
+    time travel never moves another's board. A bot can sit in many learners' cohorts at once. Cohorts
+    are finalized lazily, one week at a time, after the week has ended on the owner's clock.
     """
 
     __tablename__ = "league_cohorts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    league_tier: Mapped[int] = mapped_column(sa.ForeignKey("leagues.tier", ondelete="RESTRICT"))
+    owner_user_id: Mapped[int] = mapped_column(sa.ForeignKey("users.id", ondelete="CASCADE"))
+    league_tier: Mapped[int] = mapped_column(sa.ForeignKey("leagues.tier", ondelete="RESTRICT"), index=True)
     week_start: Mapped[date]
     created_at: Mapped[datetime]
     finalized_at: Mapped[datetime | None]
@@ -52,10 +56,16 @@ class LeagueCohort(Base):
     )
 
     __table_args__ = (
-        sa.UniqueConstraint("league_tier", "week_start"),
+        # Leads with the owner, so it also serves the owner's foreign key.
+        sa.UniqueConstraint("owner_user_id", "league_tier", "week_start"),
         sa.CheckConstraint("strftime('%w', week_start) = '1'", name="week_starts_monday"),  # '1' is Monday
-        # Open cohorts only: the lazy weekly rollover looks for unfinalized weeks.
-        sa.Index("ix_league_cohorts_open", "week_start", sqlite_where=sa.text("finalized_at IS NULL")),
+        # Open cohorts only: the lazy weekly rollover looks for the learner's unfinalized weeks.
+        sa.Index(
+            "ix_league_cohorts_open",
+            "owner_user_id",
+            "week_start",
+            sqlite_where=sa.text("finalized_at IS NULL"),
+        ),
     )
 
 

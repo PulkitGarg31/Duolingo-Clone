@@ -1,10 +1,15 @@
-"""The per-request context every use case receives."""
+"""The per-request context every use case receives, and who counts as the demo learner."""
 
 from dataclasses import dataclass
 from datetime import date, datetime
 
 from app.core.config import Settings
 from app.models import User, UserSettings, UserStats
+
+
+def is_demo_learner(user: User, settings: Settings) -> bool:
+    """Whether `user` is the seeded demo learner, the one a request without a token acts as."""
+    return user.username == settings.default_username
 
 
 @dataclass(frozen=True)
@@ -21,6 +26,11 @@ class RequestContext:
     now: datetime
     today: date
     settings: Settings
+
+    @property
+    def is_demo(self) -> bool:
+        """Whether the learner is the seeded demo learner rather than an account of their own."""
+        return is_demo_learner(self.user, self.settings)
 
     @property
     def preferences(self) -> UserSettings:

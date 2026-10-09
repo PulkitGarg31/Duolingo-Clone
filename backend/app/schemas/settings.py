@@ -2,13 +2,12 @@
 
 from typing import Self
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import model_validator
 from pydantic_core import PydanticCustomError
 
-from app.domain.calendar import canonical_timezone, is_valid_timezone
 from app.domain.enums import Theme, TimezoneEffect
 from app.schemas.base import ApiModel
-from app.schemas.common import DailyGoalXp
+from app.schemas.common import DailyGoalXp, IanaTimezone
 
 
 class SettingsOut(ApiModel):
@@ -39,14 +38,7 @@ class SettingsPatchIn(ApiModel):
     animations: bool | None = None
     motivational_messages: bool | None = None
     listening_exercises: bool | None = None
-    timezone: str | None = Field(default=None, max_length=64)
-
-    @field_validator("timezone")
-    @classmethod
-    def _known_timezone(cls, value: str | None) -> str | None:
-        if value is not None and not is_valid_timezone(value):
-            raise PydanticCustomError("unknown_timezone", "Unknown IANA time zone '{zone}'", {"zone": value})
-        return None if value is None else canonical_timezone(value)
+    timezone: IanaTimezone | None = None
 
     @model_validator(mode="after")
     def _require_a_change(self) -> Self:

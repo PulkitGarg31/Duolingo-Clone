@@ -13,7 +13,7 @@ from collections.abc import Sequence
 
 from app.core.clock import SystemClock
 from app.core.config import Settings, get_settings
-from app.core.db import make_engine, make_session_factory
+from app.core.db import create_tables, make_engine, make_session_factory
 from app.models import Base
 from app.seed.loader import seed_if_empty
 from app.seed.validate import DATA_DIR, SeedBundle, SeedError, load_bundle
@@ -66,7 +66,7 @@ def rebuild_database(settings: Settings) -> None:
     engine = make_engine(settings.database_url)
     try:
         Base.metadata.drop_all(engine)
-        Base.metadata.create_all(engine)
+        create_tables(engine, Base.metadata)  # also records the schema, so the next boot keeps the data
         with make_session_factory(engine)() as db:
             seed_if_empty(db, real_now=SystemClock().now(), settings=settings)
             db.commit()

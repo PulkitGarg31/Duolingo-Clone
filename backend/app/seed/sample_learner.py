@@ -1,21 +1,22 @@
-"""The sample learner in the database: write the planned history, and rebuild the demo on reset.
+"""Learner rows in the database: the sample learner's history, a new account's start, and resets.
 
 `apply_sample_learner_state` reads what the plan needs (`load_world`), plans the history with
 `app.seed.history` and writes it with Core statements, then evaluates achievements so the badges can
-never disagree with the data. No service is replayed. `reset_demo` wipes every user's learner data
-and applies the history again, relative to a new instant.
+never disagree with the data. No service is replayed. A reset only ever touches one learner:
+`reset_demo` wipes the demo learner's data and applies the history again, relative to a new instant,
+and `restart_account` starts any other account over as if it had just signed up.
 """
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Final
 
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import Delete, delete, insert, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.errors import NotFound
-from app.domain.enums import EndReason, SessionStatus
+from app.domain.enums import EndReason, GemReason, SessionStatus
+from app.domain.rules import NEW_ACCOUNT_GEMS
 from app.models import (
     ActivityDay,
     BotProfile,
@@ -50,24 +51,6 @@ from app.seed.history import (
 from app.seed.schema import SampleLearnerFile
 from app.seed.validate import DATA_DIR, load_bundle
 from app.services import achievement_service, exercises, reference
-
-# Learner-side tables, children before parents. A reset empties them for every user; content,
-# catalogues, bot users and bot profiles stay.
-LEARNER_TABLES: Final = (
-    QuestClaim,
-    UserAchievement,
-    GemTransaction,
-    Purchase,
-    XpEvent,
-    SessionItem,
-    LessonSession,
-    ActivityDay,
-    LeagueMembership,
-    LeagueCohort,
-    UserStats,
-    UserSettings,
-)
-
 
 # ---- reading what the plan needs ----
 
@@ -181,7 +164,7 @@ def _write_history(db: Session, learner_id: int, rows: SampleRows) -> None:
         ],
     )
     for cohort in rows.cohorts:
-        _insert_cohort(db, cohort)
+        _insert_cohort(db, learner_id, cohort)
 
 
 def _insert_session(db: Session, learner_id: int, session: PlannedSession) -> int:
@@ -237,11 +220,12 @@ def _gem_row(
     }
 
 
-def _insert_cohort(db: Session, cohort: PlannedCohort) -> None:
-    """A cohort and its memberships."""
+def _insert_cohort(db: Session, learner_id: int, cohort: PlannedCohort) -> None:
+    """One of the learner's own cohorts, with its memberships."""
     cohort_id = db.execute(
         insert(LeagueCohort)
         .values(
+            owner_user_id=learner_id,
             league_tier=cohort.tier,
             week_start=cohort.week_start,
             created_at=cohort.created_at,
@@ -298,15 +282,35 @@ def insert_fresh_learner_rows(db: Session, user_ids: Sequence[int], now: datetim
         db.execute(insert(UserStats), [{"user_id": user_id, "updated_at": now} for user_id in user_ids])
 
 
+def start_new_account(db: Session, user_id: int, now: datetime) -> None:
+    """A new account's first rows: default settings, full hearts, no streak, Bronze, no freezes, and
+    the opening gems, booked as a `seed` row of the gem ledger so the cached balance matches it.
+
+    The account starts at the first lesson of its course with nothing done: progress is only ever
+    derived from facts, and it has none yet.
+    """
+    db.execute(insert(UserSettings).values(user_id=user_id, updated_at=now))
+    db.execute(insert(UserStats).values(user_id=user_id, gems=NEW_ACCOUNT_GEMS, updated_at=now))
+    db.execute(
+        insert(GemTransaction).values(
+            user_id=user_id,
+            delta=NEW_ACCOUNT_GEMS,
+            balance_after=NEW_ACCOUNT_GEMS,
+            reason=GemReason.SEED,
+            created_at=now,
+        )
+    )
+
+
 # ---- reset ----
 
 
 def reset_demo(db: Session, real_now: datetime, settings: Settings, tz: str | None = None) -> None:
-    """Rebuild the demo: wipe every user's learner data, put the clock back on real time, and replay
-    the sample learner's history relative to `real_now`, in `tz` (by default their current zone).
+    """Rebuild the demo learner: wipe their data, put their clock back on real time, and replay the
+    sample history relative to `real_now`, in `tz` (by default their current zone).
 
-    Rows are deleted children first; tables are never dropped. Content, catalogues, bot users and bot
-    profiles stay, and every human gets fresh settings and stats. Runs in the caller's transaction.
+    Every other learner, and their cohorts, are left exactly as they are. Content, catalogues and bots
+    stay too. Runs in the caller's transaction.
     """
     learner = user_repo.get_by_username(db, settings.default_username)
     if learner is None:
@@ -320,9 +324,43 @@ def reset_demo(db: Session, real_now: datetime, settings: Settings, tz: str | No
             "the seed files changed since this database was seeded: run `python -m app.seed --reset`"
         )
     db.flush()
-    for table in LEARNER_TABLES:
-        db.execute(delete(table))
+    _wipe_learner(db, learner_id)
+    insert_fresh_learner_rows(db, [learner_id], real_now)
     system_repo.mark_reseeded(db, seeded_at=real_now)
-    humans = db.scalars(select(User.id).where(User.id.not_in(select(BotProfile.user_id))).order_by(User.id))
-    insert_fresh_learner_rows(db, list(humans), real_now)
     apply_sample_learner_state(db, learner_id, bundle.sample_learner, now=real_now, tz=zone)
+
+
+def restart_account(db: Session, user_id: int, real_now: datetime) -> None:
+    """Start a learner over at `real_now` as a new account: their data wiped, their clock back on real
+    time, then a new account's settings, stats and gems. Their sign-in sessions stay, so a signed-in
+    learner stays signed in. Runs in the caller's transaction."""
+    db.flush()
+    _wipe_learner(db, user_id)
+    start_new_account(db, user_id, real_now)
+
+
+def _wipe_learner(db: Session, user_id: int) -> None:
+    """Delete one learner's data, children before parents, and put their clock back on real time.
+
+    The user row and their sign-in sessions stay. Their own cohorts go with every membership in them,
+    the bots' included: those memberships exist only in this learner's league weeks.
+    """
+    sessions = select(LessonSession.id).where(LessonSession.user_id == user_id)
+    cohorts = select(LeagueCohort.id).where(LeagueCohort.owner_user_id == user_id)
+    statements: tuple[Delete, ...] = (
+        delete(QuestClaim).where(QuestClaim.user_id == user_id),
+        delete(UserAchievement).where(UserAchievement.user_id == user_id),
+        delete(GemTransaction).where(GemTransaction.user_id == user_id),
+        delete(Purchase).where(Purchase.user_id == user_id),
+        delete(XpEvent).where(XpEvent.user_id == user_id),
+        delete(SessionItem).where(SessionItem.session_id.in_(sessions)),
+        delete(LessonSession).where(LessonSession.user_id == user_id),
+        delete(ActivityDay).where(ActivityDay.user_id == user_id),
+        delete(LeagueMembership).where(LeagueMembership.cohort_id.in_(cohorts)),
+        delete(LeagueCohort).where(LeagueCohort.owner_user_id == user_id),
+        delete(UserStats).where(UserStats.user_id == user_id),
+        delete(UserSettings).where(UserSettings.user_id == user_id),
+    )
+    for statement in statements:
+        db.execute(statement)
+    db.execute(update(User).where(User.id == user_id).values(clock_offset_seconds=0))

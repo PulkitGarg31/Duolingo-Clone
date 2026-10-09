@@ -137,18 +137,30 @@ class TestXpToPassNext:
 
 
 class TestDrawBots:
+    OWNER = 1  # the learner whose cohort is filled
+
     def test_twenty_nine_distinct_bots_from_the_pool(self) -> None:
-        drawn = draw_bots(BOT_POOL, BRONZE, MONDAY)
+        drawn = draw_bots(BOT_POOL, BRONZE, MONDAY, owner_id=self.OWNER)
         assert len(drawn) == len(set(drawn)) == 29
         assert set(drawn) <= set(BOT_POOL)
 
     def test_deterministic_and_independent_of_the_pool_order(self) -> None:
-        assert draw_bots(BOT_POOL, BRONZE, MONDAY) == draw_bots(list(reversed(BOT_POOL)), BRONZE, MONDAY)
+        assert draw_bots(BOT_POOL, BRONZE, MONDAY, owner_id=self.OWNER) == draw_bots(
+            list(reversed(BOT_POOL)), BRONZE, MONDAY, owner_id=self.OWNER
+        )
 
     def test_each_tier_and_week_gets_its_own_field(self) -> None:
-        bronze_this_week = set(draw_bots(BOT_POOL, BRONZE, MONDAY))
-        assert bronze_this_week != set(draw_bots(BOT_POOL, SILVER, MONDAY))
-        assert bronze_this_week != set(draw_bots(BOT_POOL, BRONZE, MONDAY + timedelta(days=7)))
+        bronze_this_week = set(draw_bots(BOT_POOL, BRONZE, MONDAY, owner_id=self.OWNER))
+        assert bronze_this_week != set(draw_bots(BOT_POOL, SILVER, MONDAY, owner_id=self.OWNER))
+        next_week = MONDAY + timedelta(days=7)
+        assert bronze_this_week != set(draw_bots(BOT_POOL, BRONZE, next_week, owner_id=self.OWNER))
+
+    def test_each_learner_gets_a_field_of_their_own(self) -> None:
+        # Every learner competes in private cohorts, so two learners in one tier and week rarely meet
+        # the same bots; a bot may still sit in both fields.
+        fields = {owner: set(draw_bots(BOT_POOL, BRONZE, MONDAY, owner_id=owner)) for owner in (1, 2, 3)}
+        assert len({frozenset(field) for field in fields.values()}) == 3
+        assert fields[1] & fields[2]  # 29 of 35 bots each: the fields always overlap
 
     def test_a_small_pool_is_drawn_entirely(self) -> None:
-        assert sorted(draw_bots([3, 1, 2], SILVER, MONDAY)) == [1, 2, 3]
+        assert sorted(draw_bots([3, 1, 2], SILVER, MONDAY, owner_id=self.OWNER)) == [1, 2, 3]

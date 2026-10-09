@@ -1,4 +1,4 @@
-"""Demo tools under /dev: read and move the shared clock, tweak the learner, reset the demo."""
+"""Demo tools under /dev: read and move the learner's own clock, tweak the learner, reset their data."""
 
 from datetime import date, datetime, timedelta
 from typing import Literal, Self
@@ -17,7 +17,7 @@ MAX_DEV_GEMS = 1_000_000  # keeps demo balances far from integer limits
 
 
 class ClockOut(ApiModel):
-    """The demo clock: real time, the forward-only offset, and the simulated time it gives."""
+    """The learner's clock: real time, their forward-only offset, and the simulated time it gives."""
 
     real_now: datetime
     offset_seconds: int
@@ -89,7 +89,7 @@ class DevLearnerPatchIn(ApiModel):
 
 
 class DevResetOut(ApiModel):
-    """The demo after a reset: learner data re-seeded and the clock back at real time."""
+    """The caller after a reset: their data rebuilt and their clock back at real time."""
 
     reset: Literal[True] = True
     seeded_at: datetime

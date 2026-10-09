@@ -5,15 +5,19 @@ BEGIN IMMEDIATE, which takes the write lock up front. GET requests write during 
 a page fires several queries at once. With deferred transactions, two requests can both start
 reading and then one of them fails to upgrade to the write lock ("database is locked", which no
 busy timeout fixes). Taking the lock at BEGIN makes the requests queue instead.
+
+`create_tables` builds the schema, rebuilding a database file that was made for another one.
 """
 
+import hashlib
 import sqlite3
 from pathlib import Path
 
-from sqlalchemy import Connection, Engine, create_engine, event
+from sqlalchemy import Connection, Engine, MetaData, create_engine, event
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import ConnectionPoolEntry
+from sqlalchemy.schema import CreateIndex, CreateTable
 
 from app.core.config import get_settings
 
@@ -63,6 +67,45 @@ def make_engine(database_url: str) -> Engine:
     event.listen(engine, "connect", _on_connect)
     event.listen(engine, "begin", _on_begin)
     return engine
+
+
+def schema_fingerprint(engine: Engine, metadata: MetaData) -> int:
+    """A positive 31-bit fingerprint of the schema `metadata` describes: a hash of its DDL, the same in
+    every process, small enough for SQLite's user_version."""
+    ddl = [str(CreateTable(table).compile(engine)) for table in metadata.sorted_tables]
+    ddl += [
+        str(CreateIndex(index).compile(engine))
+        for table in metadata.sorted_tables
+        for index in sorted(table.indexes, key=lambda index: str(index.name))
+    ]
+    digest = hashlib.sha256("\n".join(ddl).encode()).digest()
+    return int.from_bytes(digest[:4], "big") & 0x7FFF_FFFF or 1  # 0 means "never set"
+
+
+def create_tables(engine: Engine, metadata: MetaData) -> bool:
+    """Create the tables `metadata` describes; True when an outdated database was dropped first.
+
+    There are no migrations: the database holds demo data only, and the hosted demo starts from an
+    empty file on every boot. A file built for another schema (by an older version, say) is told
+    apart by the fingerprint kept in SQLite's user_version, and is rebuilt from scratch instead of
+    failing on its first query; the caller then seeds it again. `create_all` alone would leave an
+    existing table as it is, missing any column added since.
+    """
+    expected = schema_fingerprint(engine, metadata)
+    with engine.begin() as conn:
+        stored = conn.exec_driver_sql("PRAGMA user_version").scalar_one()
+        # SQLite's own tables (sqlite_sequence, ...) don't count.
+        has_tables = conn.exec_driver_sql(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite%'"
+        ).scalar_one()
+        outdated = bool(has_tables) and stored != expected
+        if outdated:
+            stale = MetaData()
+            stale.reflect(conn)
+            stale.drop_all(conn)  # children before parents, so no foreign key is left dangling
+        metadata.create_all(conn)
+        conn.exec_driver_sql(f"PRAGMA user_version = {expected:d}")
+    return outdated
 
 
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:

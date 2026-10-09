@@ -18,7 +18,7 @@ from app.services.context import RequestContext
 @dataclass(frozen=True)
 class SettingsUpdate:
     """The answer to a PATCH, and the request's instant after it: rebuilding the sample history puts
-    the demo clock back on real time, as the demo reset does."""
+    the demo learner's clock back on real time, as their reset does."""
 
     out: SettingsUpdateOut
     now: datetime
@@ -102,21 +102,17 @@ def learner_is_pristine(db: Session, user_id: int, seeded_at: datetime) -> bool:
 def _is_untouched_sample_learner(db: Session, ctx: RequestContext) -> bool:
     """Whether the learner is the seeded sample learner, untouched since the seed.
 
-    Only the sample learner has a seeded history to rebuild; other learners exist in local runs and
-    tests only, and a rebuild would erase what they did.
+    Only the sample learner has a seeded history to rebuild; an account's history is its own, and a
+    rebuild would erase what they did.
     """
     state = system_repo.get_state(db)
-    return (
-        state is not None
-        and ctx.user.username == ctx.settings.default_username
-        and learner_is_pristine(db, ctx.user.id, state.seeded_at)
-    )
+    return state is not None and ctx.is_demo and learner_is_pristine(db, ctx.user.id, state.seeded_at)
 
 
 def _rebuild_sample_history(db: Session, ctx: RequestContext, new_timezone: str) -> RequestContext:
-    """Re-seed the demo with the sample history replayed in `new_timezone`, relative to real time,
-    and return the request context afterwards, with the new zone confirmed."""
-    real_now = ctx.now - timedelta(seconds=system_repo.offset_seconds(db))
+    """Re-seed the demo learner with the sample history replayed in `new_timezone`, relative to real
+    time, and return the request context afterwards, with the new zone confirmed."""
+    real_now = ctx.now - timedelta(seconds=ctx.user.clock_offset_seconds)
     reset_demo(db, real_now, ctx.settings, tz=new_timezone)
     db.flush()
     db.expire_all()  # the rebuild rewrote rows with bulk statements: read them back from the database

@@ -67,6 +67,40 @@ def test_the_real_startup_builds_and_seeds_an_empty_database(
         engine.dispose()
 
 
+def test_the_real_startup_rebuilds_a_database_left_by_another_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A local file from before per-learner clocks: create_all alone would keep its old tables.
+    engine = make_engine(f"sqlite:///{(tmp_path / 'boot' / 'app.db').as_posix()}")
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE app_state (id INTEGER PRIMARY KEY, clock_offset_seconds INTEGER NOT NULL,"
+            " seeded_at DATETIME NOT NULL, seed_version VARCHAR(64) NOT NULL)"
+        )
+        conn.exec_driver_sql("INSERT INTO app_state VALUES (1, 3600, '2026-10-08 12:00:00', 'old')")
+    sessions = make_session_factory(engine)
+    monkeypatch.setattr(main, "engine", engine)
+    monkeypatch.setattr(main, "SessionLocal", sessions)
+    app = main.create_app(api_settings(str(engine.url)))
+
+    def get_test_db() -> Iterator[Session]:
+        with sessions() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = get_test_db
+    try:
+        with TestClient(app) as client:
+            assert client.get(f"{API}/health").json()["seeded"] is True
+            me = client.get(f"{API}/me").json()
+            assert (me["streak"]["current"], me["user"]["isDemo"], me["dev"]["clockOffsetSeconds"]) == (
+                13,
+                True,
+                0,
+            )
+    finally:
+        engine.dispose()
+
+
 def test_me_has_exactly_the_contract_keys(client: TestClient) -> None:
     me = client.get(f"{API}/me").json()
     assert set(me) == CONTRACT_KEYS["MeOut"]
@@ -229,13 +263,23 @@ def test_health_reports_an_unseeded_database(bare_client: TestClient) -> None:
     assert body["bootedAt"].endswith("Z")
 
 
-def test_health_reports_seeding_and_the_demo_clock(
+def test_health_reports_seeding_and_real_time(
     bare_client: TestClient, db: Session, clock: FrozenClock
 ) -> None:
-    db.add(AppState(id=1, clock_offset_seconds=3600, seeded_at=FROZEN_NOW, seed_version="test"))
+    db.add(AppState(id=1, seeded_at=FROZEN_NOW, seed_version="test"))
     db.commit()
-    body = bare_client.get(f"{API}/health").json()
-    assert body["seeded"] is True
-    assert body["serverTime"] == "2026-10-08T13:00:00Z"  # real time plus the one-hour offset
+    response = bare_client.get(f"{API}/health")
+    assert response.json()["seeded"] is True
+    # Health acts as no learner, so it reports real time, never anyone's simulated clock.
+    assert response.json()["serverTime"] == "2026-10-08T12:00:00Z"
+    assert "x-server-time" not in response.headers
     clock.advance(minutes=30)
-    assert bare_client.get(f"{API}/health").json()["serverTime"] == "2026-10-08T13:30:00Z"
+    assert bare_client.get(f"{API}/health").json()["serverTime"] == "2026-10-08T12:30:00Z"
+
+
+def test_health_ignores_every_learners_time_travel(client: TestClient) -> None:
+    assert client.post(f"{API}/dev/clock/advance", json={"days": 2}).status_code == 200
+    response = client.get(f"{API}/health")
+    assert response.json()["serverTime"] == "2026-10-08T12:00:00Z"
+    assert "x-server-time" not in response.headers
+    assert get_me(client)["serverNow"] == "2026-10-10T12:00:00Z"  # the learner's own clock moved

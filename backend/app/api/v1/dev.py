@@ -1,7 +1,8 @@
-"""Demo tools: the shared clock, learner tweaks and the demo reset.
+"""Demo tools: the learner's own clock, learner tweaks and the reset of the learner's data.
 
-The routes are always mounted; `require_dev_tools` answers 403 when the tools are switched off.
-A route that moves the clock reports the new instant in the X-Server-Time header.
+Every tool acts on the caller alone, so each account is a sandbox. The routes are always mounted;
+`require_dev_tools` answers 403 when the tools are switched off. A route that moves the clock
+reports the new instant in the X-Server-Time header.
 """
 
 from fastapi import APIRouter, Depends, Request
@@ -20,10 +21,10 @@ router = APIRouter(
 )
 
 
-@router.get("/clock", response_model=ClockOut, operation_id="getDevClock", summary="The demo clock")
-def get_clock(db: DbDep, ctx: CtxDep) -> ClockOut:
-    """Real time, the forward-only offset and the simulated time in the learner's zone."""
-    return dev_service.clock(db, ctx.user, ctx.now)
+@router.get("/clock", response_model=ClockOut, operation_id="getDevClock", summary="The learner's clock")
+def get_clock(ctx: CtxDep) -> ClockOut:
+    """Real time, the learner's forward-only offset and the simulated time in their zone."""
+    return dev_service.clock(ctx.user, ctx.now)
 
 
 @router.post(
@@ -34,7 +35,7 @@ def get_clock(db: DbDep, ctx: CtxDep) -> ClockOut:
     responses=problem_responses(422),
 )
 def advance_clock(body: ClockAdvanceIn, request: Request, db: DbDep, ctx: CtxDep) -> ClockChangeOut:
-    """Move time forward by 1 minute to 60 days, then report what catching up changed."""
+    """Move the learner's time forward by 1 minute to 60 days, then report what catching up changed."""
     return _commit_jump(request, db, dev_service.advance(db, ctx, body))
 
 
@@ -71,10 +72,11 @@ def patch_learner(body: DevLearnerPatchIn, db: DbDep, ctx: CtxDep) -> MeOut:
     return me_service.build_me(db, ctx)
 
 
-@router.post("/reset", response_model=DevResetOut, operation_id="resetDemo", summary="Reset the demo")
+@router.post("/reset", response_model=DevResetOut, operation_id="resetDemo", summary="Reset my progress")
 def reset_demo(request: Request, db: DbDep, ctx: CtxDep) -> DevResetOut:
-    """Delete all learner data, put the clock back on real time and re-seed the sample learner; the
-    answer holds the caller's state after the reset."""
+    """Start the caller over with their clock back on real time: the demo learner gets the sample
+    history again, any other account a new account's start. Nobody else is touched. The answer holds
+    the caller's state after the reset."""
     reset = dev_service.reset(db, ctx)
     db.commit()
     request.state.now = reset.ctx.now

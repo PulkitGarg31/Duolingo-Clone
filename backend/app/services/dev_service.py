@@ -1,8 +1,9 @@
-"""Demo tools: the shared clock, learner tweaks and the demo reset.
+"""Demo tools: the learner's own clock, learner tweaks and the reset of the learner's data.
 
-Simulated time is real time plus a global offset that only ever grows, so rows written earlier can
-never end up in the future. A jump adds to the offset and then runs the same catch-up every
-request runs, at the new `now`; resetting the demo is the only way back to real time.
+Every account is a sandbox: simulated time is real time plus the learner's own offset, which only
+ever grows, so rows written earlier can never end up in the future. A jump adds to the caller's
+offset and then runs the same catch-up every request runs, at the new `now`; resetting the caller's
+progress is the only way back to real time. No tool here touches another learner.
 """
 
 import math
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.calendar import league_week_bounds, league_week_start, local_date, next_local_midnight
 from app.models import User
-from app.repositories import system_repo, user_repo
+from app.repositories import user_repo
 from app.schemas.dev import (
     ClockAdvanceIn,
     ClockChangeOut,
@@ -24,7 +25,7 @@ from app.schemas.dev import (
     SyncEffectsOut,
     SyncStreakOut,
 )
-from app.seed.sample_learner import reset_demo
+from app.seed.sample_learner import reset_demo, restart_account
 from app.services import gems_service, hearts_service, sync_service
 from app.services.context import RequestContext
 
@@ -43,15 +44,15 @@ class ClockJump:
 
 @dataclass(frozen=True)
 class DemoReset:
-    """When the demo was re-seeded, and the caller's request context after the reset."""
+    """When the caller's data was rebuilt, and their request context after the reset."""
 
     seeded_at: datetime
     ctx: RequestContext
 
 
-def clock(db: Session, user: User, now: datetime) -> ClockOut:
-    """The demo clock at `now`: real time, the offset, and the simulated time in the learner's zone."""
-    offset = system_repo.offset_seconds(db)
+def clock(user: User, now: datetime) -> ClockOut:
+    """The learner's clock at `now`: real time, their offset, and the simulated time in their zone."""
+    offset = user.clock_offset_seconds
     week = league_week_start(now)
     return ClockOut(
         real_now=now - timedelta(seconds=offset),
@@ -89,16 +90,21 @@ def patch_learner(db: Session, ctx: RequestContext, patch: DevLearnerPatchIn) ->
 
 
 def reset(db: Session, ctx: RequestContext) -> DemoReset:
-    """Delete every learner's data, put the clock back on real time and re-seed the sample learner
-    in their current time zone. Returns the caller's context at real time, read back after the reset
-    (the sample learner's rebuilt history, or a fresh start for any other learner)."""
-    real_now = ctx.now - timedelta(seconds=system_repo.offset_seconds(db))
-    reset_demo(db, real_now, ctx.settings)
+    """Start the caller over and put their clock back on real time; nobody else is touched.
+
+    The demo learner gets the sample history again, in their current time zone; any other account
+    starts over as a new account. Returns the caller's context at real time, read back after the reset.
+    """
+    real_now = ctx.now - timedelta(seconds=ctx.user.clock_offset_seconds)
+    if ctx.is_demo:
+        reset_demo(db, real_now, ctx.settings)
+    else:
+        restart_account(db, ctx.user.id, real_now)
     db.flush()
     db.expire_all()  # the reset rewrote rows with bulk statements: read them back from the database
     caller = user_repo.get(db, ctx.user.id)
-    if caller is None or caller.stats is None:  # the reset gives every learner fresh stats
-        raise RuntimeError(f"the demo reset left learner {ctx.user.id} without stats")
+    if caller is None or caller.stats is None:  # either reset gives the learner fresh stats
+        raise RuntimeError(f"the reset left learner {ctx.user.id} without stats")
     after = RequestContext(
         user=caller,
         stats=caller.stats,
@@ -110,15 +116,20 @@ def reset(db: Session, ctx: RequestContext) -> DemoReset:
 
 
 def _jump_to(db: Session, ctx: RequestContext, target: datetime) -> ClockJump:
-    """Add whole seconds to the offset to reach `target`, then catch the learner up to it."""
+    """Add whole seconds to the learner's offset to reach `target`, then catch them up to it.
+
+    Every jump lands after `now`, so the offset only grows (and the database refuses a negative one).
+    """
     seconds = math.ceil((target - ctx.now).total_seconds())
-    system_repo.advance_offset(db, seconds)
+    if seconds <= 0:
+        raise ValueError(f"the clock only moves forward, got {seconds} s")
+    ctx.user.clock_offset_seconds += seconds  # read under this request's write lock, so no update is lost
     new_now = ctx.now + timedelta(seconds=seconds)
     effects = sync_service.bring_to_now(db, ctx.user, new_now, ctx.settings)
     return ClockJump(
         now=new_now,
         change=ClockChangeOut(
-            clock=clock(db, ctx.user, new_now),
+            clock=clock(ctx.user, new_now),
             effects=SyncEffectsOut(
                 hearts_gained=effects.hearts_gained,
                 streak=SyncStreakOut(

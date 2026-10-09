@@ -88,12 +88,7 @@ def seed_if_empty(db: Session, real_now: datetime, settings: Settings) -> bool:
     )
     apply_sample_learner_state(db, learner_id, bundle.sample_learner, now=real_now, tz=settings.seed_timezone)
     db.execute(
-        insert(AppState).values(
-            id=system_repo.APP_STATE_ID,
-            clock_offset_seconds=0,
-            seeded_at=real_now,
-            seed_version=bundle.version,
-        )
+        insert(AppState).values(id=system_repo.APP_STATE_ID, seeded_at=real_now, seed_version=bundle.version)
     )
     return True
 
@@ -356,12 +351,16 @@ def insert_users(db: Session, users: UsersFile, *, course_id: int, timezone: str
     """The learner and the bots with their profiles. Returns the learner's id.
 
     The learner starts with fresh settings and stats and an unconfirmed time zone, which the first
-    visit replaces with the browser's. Bots get no settings, stats or ledger rows.
+    visit replaces with the browser's. Bots get no settings, stats or ledger rows. Neither can log in
+    (no email or password: the demo learner is who a request without a token acts as), and every
+    clock starts on real time.
     """
     learner = users.learner
+    no_account = {"email": None, "password_hash": None, "clock_offset_seconds": 0}
     rows = [
         {
             **learner.model_dump(),
+            **no_account,
             "timezone": timezone,
             "timezone_confirmed": False,
             "current_course_id": course_id,
@@ -370,6 +369,7 @@ def insert_users(db: Session, users: UsersFile, *, course_id: int, timezone: str
         *(
             {
                 **bot.model_dump(include={"username", "display_name", "avatar_color"}),
+                **no_account,
                 "timezone": BOT_TIMEZONE,
                 "timezone_confirmed": False,
                 "current_course_id": course_id,

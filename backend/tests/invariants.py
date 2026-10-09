@@ -1,9 +1,10 @@
 """The invariants every state of the game keeps, checked straight on the database.
 
-`check_invariants(db, now)` lists every broken invariant as one readable line; an empty list means the
-database is consistent at `now`. The API tests run it after every scenario and the seed tests run it
-on the seeded demo, each time after bringing every learner up to `now` the way a request does,
-because I3 describes a settled streak.
+`check_invariants(db, real_now)` lists every broken invariant as one readable line; an empty list means
+the database is consistent. Every learner runs on a clock of their own, so each learner's facts are
+checked against their own now: real time plus their clock offset. The API tests run it after every
+scenario and the seed tests run it on the seeded demo, each time after bringing every learner up to
+their now the way a request does, because I3 describes a settled streak.
 
 - I1: a learner's gems equal the sum of their gem ledger, and each row's balance follows from the
   rows before it.
@@ -14,8 +15,10 @@ because I3 describes a settled streak.
 - I4: a user has at most one active session.
 - I5: a completed session's XP lines and its mistake and combo snapshots match its items; no other
   session earned XP.
-- I6: no row is dated after `now`, and no learner-local day after the learner's today.
-- I7: a learner has at most one league membership per week; a finalized cohort ranks its members 1..n.
+- I6: no row is dated after its owner's now (real time for rows of no learner), and no learner-local
+  day after the learner's today.
+- I7: a learner has at most one league membership per week; a cohort's only human member is its owner;
+  a finalized cohort ranks its members 1..n.
 - I8: a learner has an active calendar day exactly on the local days they earned XP.
 - I9: each legendary session paid exactly one entry fee; chest rewards come from chest nodes only.
 """
@@ -36,6 +39,8 @@ from app.domain.session_flow import ItemFacts
 from app.models import (
     ActivityDay,
     AppState,
+    AuthSession,
+    BotProfile,
     GemTransaction,
     LeagueCohort,
     LeagueMembership,
@@ -53,28 +58,34 @@ from app.models import (
 
 ONE_DAY: Final = timedelta(days=1)
 
-# Every column that records when something happened. A deadline (`expires_at`) or the end of an XP
-# Boost (`xp_boost_until`) may lie ahead; a fact may not.
+# Every column that records when something happened, as (owner column, instant column): the owner is
+# the learner whose clock dated the row. A deadline (`expires_at`) or the end of an XP Boost
+# (`xp_boost_until`) may lie ahead; a fact may not. A row whose owner sits in a parent table is read
+# through that parent (an item through its session, a membership through its cohort).
 INSTANT_COLUMNS: Final = (
-    XpEvent.earned_at,
-    GemTransaction.created_at,
-    ActivityDay.created_at,
-    LeagueCohort.created_at,
-    LeagueCohort.finalized_at,
-    LeagueMembership.joined_at,
-    LeagueMembership.result_seen_at,
-    LessonSession.started_at,
-    LessonSession.last_activity_at,
-    LessonSession.ended_at,
-    SessionItem.answered_at,
-    Purchase.purchased_at,
-    QuestClaim.claimed_at,
-    UserAchievement.unlocked_at,
-    UserSettings.updated_at,
-    UserStats.updated_at,
-    User.joined_at,
-    AppState.seeded_at,
+    (XpEvent.user_id, XpEvent.earned_at),
+    (GemTransaction.user_id, GemTransaction.created_at),
+    (ActivityDay.user_id, ActivityDay.created_at),
+    (LeagueCohort.owner_user_id, LeagueCohort.created_at),
+    (LeagueCohort.owner_user_id, LeagueCohort.finalized_at),
+    (LeagueCohort.owner_user_id, LeagueMembership.joined_at),
+    (LeagueCohort.owner_user_id, LeagueMembership.result_seen_at),
+    (LessonSession.user_id, LessonSession.started_at),
+    (LessonSession.user_id, LessonSession.last_activity_at),
+    (LessonSession.user_id, LessonSession.ended_at),
+    (LessonSession.user_id, SessionItem.answered_at),
+    (Purchase.user_id, Purchase.purchased_at),
+    (QuestClaim.user_id, QuestClaim.claimed_at),
+    (UserAchievement.user_id, UserAchievement.unlocked_at),
+    (UserSettings.user_id, UserSettings.updated_at),
+    (UserStats.user_id, UserStats.updated_at),
+    (User.id, User.joined_at),
+    # Sign-in sessions run on real time, which is never later than a learner's own now.
+    (AuthSession.user_id, AuthSession.created_at),
+    (AuthSession.user_id, AuthSession.revoked_at),
 )
+# Rows of no learner, written on real time.
+REAL_TIME_COLUMNS: Final = (AppState.seeded_at,)
 
 # Learner-local days, as (owner column, day column). Each is a snapshot of the learner's day when it
 # was written, in the zone the learner had then.
@@ -86,8 +97,10 @@ DAY_COLUMNS: Final = (
 )
 
 
-def check_invariants(db: Session, now: datetime, *, zone_shifted: bool = False) -> list[str]:
-    """Every broken invariant as a readable line, or [] when the database is consistent at `now`.
+def check_invariants(db: Session, real_now: datetime, *, zone_shifted: bool = False) -> list[str]:
+    """Every broken invariant as a readable line, or [] when the database is consistent at `real_now`.
+
+    Each learner is checked at their own now: `real_now` plus their clock offset.
 
     Pass `zone_shifted=True` after a learner changed time zone. A change moves the streak's last day
     but not the day snapshots already written (calendar rows, XP days), so the two checks that
@@ -95,17 +108,24 @@ def check_invariants(db: Session, now: datetime, *, zone_shifted: bool = False) 
     "no day after today" (I6).
     """
     learners = list(db.scalars(select(User).join(UserStats).options(selectinload(User.stats))))
+    nows = learner_nows(db, real_now)
     return [
         *gems_match_the_ledger(db, learners),
-        *hearts_are_in_range(learners, now),
-        *streaks_are_settled(db, learners, now, count_runs=not zone_shifted),
+        *hearts_are_in_range(learners, nows),
+        *streaks_are_settled(db, learners, nows, count_runs=not zone_shifted),
         *one_active_session_per_user(db),
         *xp_matches_the_sessions(db),
-        *nothing_is_dated_in_the_future(db, learners, now, check_days=not zone_shifted),
+        *nothing_is_dated_in_the_future(db, learners, nows, real_now, check_days=not zone_shifted),
         *league_weeks_are_consistent(db, learners),
         *active_days_are_the_days_with_xp(db, learners),
         *fees_and_chests_point_at_their_sources(db),
     ]
+
+
+def learner_nows(db: Session, real_now: datetime) -> dict[int, datetime]:
+    """Every user's own now: real time plus their clock offset (bots stay on real time)."""
+    rows = db.execute(select(User.id, User.clock_offset_seconds))
+    return {user_id: real_now + timedelta(seconds=offset) for user_id, offset in rows}
 
 
 # ---- I1 to I3: the stored counters ----
@@ -136,11 +156,11 @@ def gems_match_the_ledger(db: Session, learners: Sequence[User]) -> list[str]:
     return problems
 
 
-def hearts_are_in_range(learners: Sequence[User], now: datetime) -> list[str]:
+def hearts_are_in_range(learners: Sequence[User], nows: dict[int, datetime]) -> list[str]:
     """I2: hearts within 0..5, an anchor exactly when below 5, and never an anchor in the future."""
     problems: list[str] = []
     for learner in learners:
-        stats = _stats(learner)
+        stats, now = _stats(learner), nows[learner.id]
         anchor = stats.hearts_regen_anchor_at
         if not 0 <= stats.hearts <= MAX_HEARTS:
             problems.append(f"I2: user {learner.id} has {stats.hearts} hearts")
@@ -154,7 +174,7 @@ def hearts_are_in_range(learners: Sequence[User], now: datetime) -> list[str]:
 
 
 def streaks_are_settled(
-    db: Session, learners: Sequence[User], now: datetime, *, count_runs: bool
+    db: Session, learners: Sequence[User], nows: dict[int, datetime], *, count_runs: bool
 ) -> list[str]:
     """I3: a live streak covers yesterday or today and never exceeds the record; a lost one has no day.
 
@@ -171,7 +191,7 @@ def streaks_are_settled(
             if last is not None:
                 problems.append(f"I3: user {learner.id} has no streak, yet a last streak day {last}")
             continue
-        today = local_date(now, learner.timezone)
+        today = local_date(nows[learner.id], learner.timezone)
         if last is None or last < today - ONE_DAY:
             problems.append(
                 f"I3: user {learner.id} has a {current}-day streak that ended on {last}, before yesterday"
@@ -282,19 +302,36 @@ def _completed_session_problems(
 
 
 def nothing_is_dated_in_the_future(
-    db: Session, learners: Sequence[User], now: datetime, *, check_days: bool
+    db: Session,
+    learners: Sequence[User],
+    nows: dict[int, datetime],
+    real_now: datetime,
+    *,
+    check_days: bool,
 ) -> list[str]:
-    """I6: no fact is dated after `now`; with `check_days`, no learner-local day after the learner's today."""
+    """I6: no fact is dated after its owner's now (rows of no learner: after real time); with
+    `check_days`, no learner-local day after the learner's today."""
     problems: list[str] = []
-    for column in INSTANT_COLUMNS:
+    for owner, column in INSTANT_COLUMNS:
+        query = select(owner, func.max(column)).select_from(column.class_)
+        if owner.class_ is not column.class_:
+            query = query.join(owner.class_)
+        for user_id, latest in db.execute(query.group_by(owner)):
+            now = nows.get(user_id, real_now)
+            if latest is not None and latest > now:
+                problems.append(
+                    f"I6: {column.class_.__tablename__}.{column.key} of user {user_id} reaches {latest},"
+                    f" after their now {now}"
+                )
+    for column in REAL_TIME_COLUMNS:
         latest = db.scalar(select(func.max(column)))
-        if latest is not None and latest > now:
+        if latest is not None and latest > real_now:
             problems.append(
-                f"I6: {column.class_.__tablename__}.{column.key} reaches {latest}, after now {now}"
+                f"I6: {column.class_.__tablename__}.{column.key} reaches {latest}, after real time {real_now}"
             )
     if not check_days:
         return problems
-    todays = {learner.id: local_date(now, learner.timezone) for learner in learners}
+    todays = {learner.id: local_date(nows[learner.id], learner.timezone) for learner in learners}
     for owner, day in DAY_COLUMNS:
         for user_id, latest_day in db.execute(select(owner, func.max(day)).group_by(owner)):
             today = todays.get(user_id)
@@ -310,7 +347,8 @@ def nothing_is_dated_in_the_future(
 
 
 def league_weeks_are_consistent(db: Session, learners: Sequence[User]) -> list[str]:
-    """I7: one membership per learner per week; finalized cohorts ranked 1..n, open ones not ranked yet."""
+    """I7: one membership per learner per week; a cohort's one human member is its owner (every learner
+    competes in private cohorts); finalized cohorts ranked 1..n, open ones not ranked yet."""
     problems: list[str] = []
     repeated = db.execute(
         select(LeagueMembership.user_id, LeagueCohort.week_start, func.count())
@@ -321,7 +359,13 @@ def league_weeks_are_consistent(db: Session, learners: Sequence[User]) -> list[s
     )
     for user_id, week_start, count in repeated:
         problems.append(f"I7: user {user_id} has {count} memberships in the week of {week_start}")
+    bots = set(db.scalars(select(BotProfile.user_id)))
     for cohort in db.scalars(select(LeagueCohort).options(selectinload(LeagueCohort.memberships))):
+        humans = sorted(m.user_id for m in cohort.memberships if m.user_id not in bots)
+        if humans != [cohort.owner_user_id]:
+            problems.append(
+                f"I7: cohort {cohort.id} of user {cohort.owner_user_id} has the human members {humans}"
+            )
         ranks = sorted(membership.final_rank or 0 for membership in cohort.memberships)
         if cohort.finalized_at is None and any(ranks):
             problems.append(f"I7: open cohort {cohort.id} already has final ranks {ranks}")

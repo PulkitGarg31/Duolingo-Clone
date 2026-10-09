@@ -23,6 +23,11 @@ def list_courses(db: Session) -> list[Course]:
     return list(db.scalars(select(Course).order_by(Course.position)))
 
 
+def first_published_course_id(db: Session) -> int | None:
+    """The first published course in menu order: the one a new account starts on."""
+    return db.scalar(select(Course.id).where(Course.is_published).order_by(Course.position).limit(1))
+
+
 def course_path(db: Session, course_id: int) -> list[Unit]:
     """A course's units in path order, each with its nodes (in order) and their lessons loaded."""
     return list(

@@ -1,7 +1,9 @@
 """Leagues: tiers, weekly cohorts, memberships and the learners' weekly XP.
 
-Bots write no XP rows; their weekly XP comes from a pure function of their profile, so the
-queries here only return their profiles.
+Each cohort belongs to one learner, its only human member. A learner's memberships are therefore
+all in their own cohorts, while a bot's are spread over many owners' cohorts: the queries about a
+bot's career take the owner whose cohorts count. Bots write no XP rows; their weekly XP comes from
+a pure function of their profile, so the queries here only return their profiles.
 """
 
 from dataclasses import dataclass
@@ -30,21 +32,30 @@ def leagues(db: Session) -> list[League]:
     return list(db.scalars(select(League).order_by(League.tier)))
 
 
-def get_cohort(db: Session, tier: int, week_start: date) -> LeagueCohort | None:
+def get_cohort(db: Session, owner_id: int, tier: int, week_start: date) -> LeagueCohort | None:
+    """The learner's own cohort of one tier and week, if it was opened."""
     return db.scalar(
-        select(LeagueCohort).where(LeagueCohort.league_tier == tier, LeagueCohort.week_start == week_start)
+        select(LeagueCohort).where(
+            LeagueCohort.owner_user_id == owner_id,
+            LeagueCohort.league_tier == tier,
+            LeagueCohort.week_start == week_start,
+        )
     )
 
 
-def open_cohorts_before(db: Session, week_start: date) -> list[LeagueCohort]:
-    """Unfinalized cohorts of weeks that started before `week_start`, oldest week first.
+def open_cohorts_before(db: Session, owner_id: int, week_start: date) -> list[LeagueCohort]:
+    """The learner's unfinalized cohorts of weeks that started before `week_start`, oldest week first.
 
-    Pass the current week's Monday to get every week that has ended but is not finalized yet.
+    Pass the current week's Monday to get every week of theirs that has ended but is not finalized yet.
     """
     return list(
         db.scalars(
             select(LeagueCohort)
-            .where(LeagueCohort.finalized_at.is_(None), LeagueCohort.week_start < week_start)
+            .where(
+                LeagueCohort.owner_user_id == owner_id,
+                LeagueCohort.finalized_at.is_(None),
+                LeagueCohort.week_start < week_start,
+            )
             .order_by(LeagueCohort.week_start, LeagueCohort.league_tier)
         )
     )
@@ -84,13 +95,14 @@ def latest_result(db: Session, user_id: int) -> LeagueMembership | None:
     )
 
 
-def memberships_with_cohorts(db: Session, user_id: int) -> list[LeagueMembership]:
-    """Every membership of a user with its cohort, oldest week first (a bot's career total)."""
+def memberships_with_cohorts(db: Session, user_id: int, owner_id: int) -> list[LeagueMembership]:
+    """A user's memberships in one learner's cohorts, with their cohorts, oldest week first (a bot's
+    career as that learner sees it)."""
     return list(
         db.scalars(
             select(LeagueMembership)
             .join(LeagueMembership.cohort)
-            .where(LeagueMembership.user_id == user_id)
+            .where(LeagueMembership.user_id == user_id, LeagueCohort.owner_user_id == owner_id)
             .order_by(LeagueCohort.week_start, LeagueCohort.league_tier)
             .options(contains_eager(LeagueMembership.cohort))
         )
@@ -106,24 +118,32 @@ def highest_cohort_tier(db: Session, user_id: int) -> int | None:
     )
 
 
-def latest_cohort_tier(db: Session, user_id: int) -> int | None:
-    """The tier of the user's newest cohort (a bot's current league), or None."""
+def latest_cohort_tier(db: Session, user_id: int, owner_id: int) -> int | None:
+    """The tier of the user's newest cohort among one learner's cohorts (a bot's current league as that
+    learner sees it), or None."""
     return db.scalar(
         select(LeagueCohort.league_tier)
         .join(LeagueCohort.memberships)
-        .where(LeagueMembership.user_id == user_id)
+        .where(LeagueMembership.user_id == user_id, LeagueCohort.owner_user_id == owner_id)
         .order_by(LeagueCohort.week_start.desc(), LeagueCohort.league_tier.desc())
         .limit(1)
     )
 
 
-def count_finishes(db: Session, user_id: int, *, best_rank: int, tier: int | None = None) -> int:
-    """Finished weeks with a final rank of `best_rank` or better, optionally in one tier only."""
+def count_finishes(
+    db: Session, user_id: int, *, owner_id: int, best_rank: int, tier: int | None = None
+) -> int:
+    """Finished weeks in one learner's cohorts with a final rank of `best_rank` or better, optionally
+    in one tier only. A learner's own finishes are those in their own cohorts."""
     query = (
         select(func.count())
         .select_from(LeagueMembership)
         .join(LeagueMembership.cohort)
-        .where(LeagueMembership.user_id == user_id, LeagueMembership.final_rank <= best_rank)
+        .where(
+            LeagueMembership.user_id == user_id,
+            LeagueCohort.owner_user_id == owner_id,
+            LeagueMembership.final_rank <= best_rank,
+        )
     )
     if tier is not None:
         query = query.where(LeagueCohort.league_tier == tier)

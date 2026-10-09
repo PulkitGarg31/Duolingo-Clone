@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.clock import FrozenClock
 from app.domain.enums import GemReason
-from app.models import AppState, GemTransaction, Purchase, XpEvent
+from app.models import Course, GemTransaction, Purchase, User, XpEvent
 from app.repositories import ledger_repo
 from app.repositories.ledger_repo import purchase_by_key
 from app.services import session_service, shop_service
@@ -52,9 +52,31 @@ INCREMENTS_PER_THREAD = 50
 def test_concurrent_read_modify_write_loses_no_updates(
     session_factory: sessionmaker[Session], clock: FrozenClock
 ) -> None:
+    # Two tabs of one learner moving their clock forward at once.
     with session_factory() as db:
-        db.add(AppState(id=1, seeded_at=clock.now(), seed_version="test"))
+        course = Course(
+            slug="es-en",
+            title="Spanish",
+            learning_language="es",
+            from_language="en",
+            tts_locale="es-ES",
+            flag_key="es",
+            position=1,
+        )
+        db.add(course)
+        db.flush()
+        learner = User(
+            username="alex",
+            display_name="Alex",
+            avatar_color="#1CB0F6",
+            timezone="Asia/Kolkata",
+            current_course_id=course.id,
+            joined_at=clock.now(),
+        )
+        db.add(learner)
         db.commit()
+        learner_offset = sa.select(User.clock_offset_seconds).where(User.id == learner.id)
+        bump = sa.update(User).where(User.id == learner.id)
 
     start_together = threading.Barrier(THREADS)
     errors: list[Exception] = []
@@ -66,9 +88,9 @@ def test_concurrent_read_modify_write_loses_no_updates(
                 for _ in range(INCREMENTS_PER_THREAD):
                     # The lost-update shape: read, compute in Python, write back. The pause invites the
                     # other thread in between; the write lock taken at BEGIN keeps it out.
-                    offset = db.scalar(sa.select(AppState.clock_offset_seconds))
+                    offset = db.scalar(learner_offset)
                     time.sleep(0.001)
-                    db.execute(sa.update(AppState).values(clock_offset_seconds=offset + 1))
+                    db.execute(bump.values(clock_offset_seconds=offset + 1))
                     db.commit()
         except Exception as error:  # reported by the assertion below, on the test thread
             errors.append(error)
@@ -81,7 +103,7 @@ def test_concurrent_read_modify_write_loses_no_updates(
 
     assert errors == []
     with session_factory() as db:
-        assert db.scalar(sa.select(AppState.clock_offset_seconds)) == THREADS * INCREMENTS_PER_THREAD
+        assert db.scalar(learner_offset) == THREADS * INCREMENTS_PER_THREAD
 
 
 # ---- races through the API ----

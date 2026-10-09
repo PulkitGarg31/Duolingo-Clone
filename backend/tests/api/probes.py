@@ -20,6 +20,7 @@ from app.core.errors import (
     BotAccount,
     ChestLocked,
     DevToolsDisabled,
+    EmailTaken,
     ErrorCode,
     HeartsAlreadyFull,
     IdempotencyKeyRequired,
@@ -27,6 +28,7 @@ from app.core.errors import (
     InsufficientGems,
     InternalError,
     InvalidAnswer,
+    InvalidCredentials,
     ItemAlreadyAnswered,
     ItemOutOfOrder,
     ItemUnavailable,
@@ -42,6 +44,7 @@ from app.core.errors import (
     SessionExpired,
     SessionIncomplete,
     SessionNotActive,
+    Unauthenticated,
     ValidationFailed,
 )
 from app.domain.enums import EndReason, SessionStatus
@@ -62,6 +65,8 @@ def sample_errors() -> list[AppError]:
         InvalidAnswer(),
         IdempotencyKeyReused(),
         IdempotencyKeyRequired(),
+        Unauthenticated(),
+        InvalidCredentials(),
         NotFound(),
         MethodNotAllowed(),
         BotAccount(),
@@ -83,6 +88,7 @@ def sample_errors() -> list[AppError]:
         ItemOutOfOrder(current_item_id=103),
         ItemAlreadyAnswered(),
         LeagueResultNotReady(),
+        EmailTaken(),
         InternalError(),
     ]
 

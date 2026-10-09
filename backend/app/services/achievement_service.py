@@ -3,7 +3,8 @@
 A level is always recomputed from the live statistic, which only ever grows. `user_achievements`
 records just the moment a learner first reached each level: it drives the unlock celebration and
 the dates on the profile. Bots never get rows; their levels are computed from their baselines and
-their league weeks, for display only.
+their league weeks, for display only. A bot competes in many learners' private cohorts, so its
+league weeks are those of the learner looking at it, the same weeks that learner's board shows.
 """
 
 from collections.abc import Mapping
@@ -25,14 +26,22 @@ Metric = AchievementMetric
 
 
 def metrics_for(
-    db: Session, user: User, now: datetime, path_now: PathSnapshot | None = None
+    db: Session,
+    user: User,
+    now: datetime,
+    path_now: PathSnapshot | None = None,
+    *,
+    viewer_id: int | None = None,
 ) -> dict[AchievementMetric, int]:
     """Every achievement statistic of a learner or a bot, as of `now`.
 
-    A learner's words learned come from their path: pass `path_now` when it is already at hand.
+    A learner's words learned come from their path: pass `path_now` when it is already at hand. A
+    bot's league weeks are counted in the cohorts of the learner `viewer_id`, who must be given.
     """
     if user.bot_profile is not None:
-        return _bot_metrics(db, user.bot_profile, now)
+        if viewer_id is None:
+            raise ValueError("a bot's statistics depend on whose cohorts they are counted in")
+        return _bot_metrics(db, user.bot_profile, now, viewer_id)
     stats = _stats(db, user.id)
     return _learner_metrics(db, user, stats, path_now or path_service.snapshot(db, user))
 
@@ -102,8 +111,10 @@ def _learner_metrics(
         Metric.HIGHEST_LEAGUE: achievements.highest_league(
             stats.league_tier, [] if highest_cohort is None else [highest_cohort], leagues_open=leagues_open
         ),
-        Metric.FIRST_PLACE_FINISHES: league_repo.count_finishes(db, user.id, best_rank=1),
-        Metric.DIAMOND_WINS: league_repo.count_finishes(db, user.id, best_rank=1, tier=leagues.HIGHEST_TIER),
+        Metric.FIRST_PLACE_FINISHES: league_repo.count_finishes(db, user.id, owner_id=user.id, best_rank=1),
+        Metric.DIAMOND_WINS: league_repo.count_finishes(
+            db, user.id, owner_id=user.id, best_rank=1, tier=leagues.HIGHEST_TIER
+        ),
     }
 
 
@@ -114,9 +125,11 @@ def _stats(db: Session, user_id: int) -> UserStats:
     return stats
 
 
-def _bot_metrics(db: Session, profile: BotProfile, now: datetime) -> dict[AchievementMetric, int]:
-    """A bot's statistics: its static baselines plus what its league weeks add, nothing else."""
-    memberships = league_repo.memberships_with_cohorts(db, profile.user_id)
+def _bot_metrics(
+    db: Session, profile: BotProfile, now: datetime, viewer_id: int
+) -> dict[AchievementMetric, int]:
+    """A bot's statistics: its static baselines plus what its weeks in the viewer's cohorts add."""
+    memberships = league_repo.memberships_with_cohorts(db, profile.user_id, viewer_id)
     first_places = [m for m in memberships if m.final_rank == 1]
     return {
         Metric.LONGEST_STREAK: profile.baseline_streak,

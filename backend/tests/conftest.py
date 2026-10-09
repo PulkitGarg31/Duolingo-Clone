@@ -4,10 +4,11 @@ The database fixtures compose: `engine` (fresh file with the schema) -> `session
 `build_database()` is the same preparation as a plain function, for fixtures with a wider scope.
 
 The API fixtures run the real application with three dependencies replaced: the database session
-(bound to the test database), the source of real time (the frozen `clock`) and the settings. The
-demo clock's offset still applies on top of the frozen clock, exactly as in production, so tests
-can move time either with `clock.advance(...)` or through the /dev clock endpoints. After every
-test that used an API client, the game's invariants (tests/invariants.py) must hold.
+(bound to the test database), the source of real time (the frozen `clock`) and the settings. Each
+learner's clock offset still applies on top of the frozen clock, exactly as in production, so tests
+can move time either with `clock.advance(...)` (everyone) or through the /dev clock endpoints (the
+caller only). After every test that used an API client, the game's invariants (tests/invariants.py)
+must hold.
 """
 
 import shutil
@@ -29,7 +30,6 @@ from app.core.db import ensure_sqlite_dir, make_engine, make_session_factory
 from app.domain.rules import DEFAULT_HEART_REGEN_MINUTES
 from app.main import create_app
 from app.models import Base, User, UserStats
-from app.repositories import system_repo
 from app.seed.loader import seed_if_empty
 from app.services import sync_service
 from tests.factories import add_learner
@@ -122,18 +122,19 @@ def running(client: TestClient) -> Iterator[TestClient]:
 
 
 def assert_invariants_hold(engine: Engine, clock: FrozenClock, *, zone_shifted: bool = False) -> None:
-    """Bring every learner up to the current instant, as any request would, then check I1-I9.
+    """Bring every learner up to their own current instant, as any request of theirs would, then
+    check I1-I9.
 
-    The current instant is the frozen real time plus the demo clock's offset. Catching up first
-    matters when a test ends by moving time: the streak rule describes a settled streak.
+    A learner's current instant is the frozen real time plus their own clock offset. Catching up
+    first matters when a test ends by moving time: the streak rule describes a settled streak.
     """
     settings = api_settings(str(engine.url))
     with make_session_factory(engine)() as db:
-        now = clock.now() + timedelta(seconds=system_repo.offset_seconds(db))
         for learner in db.scalars(select(User).join(UserStats)):  # bots have no stats and never sync
+            now = clock.now() + timedelta(seconds=learner.clock_offset_seconds)
             sync_service.bring_to_now(db, learner, now, settings)
         db.commit()
-        problems = check_invariants(db, now, zone_shifted=zone_shifted)
+        problems = check_invariants(db, clock.now(), zone_shifted=zone_shifted)
     assert problems == [], "broken invariants:\n" + "\n".join(problems)
 
 

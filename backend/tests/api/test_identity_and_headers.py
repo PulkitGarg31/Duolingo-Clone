@@ -115,9 +115,12 @@ def test_responses_are_not_cached_unless_the_route_says_so(api: TestClient) -> N
     assert api.get(f"{API_V1_PREFIX}/probe/cached").headers["cache-control"] == "public, max-age=300"
 
 
-def test_server_time_is_sent_only_when_the_request_resolved_now(api: TestClient) -> None:
+def test_server_time_is_sent_only_when_the_request_resolved_a_learner(api: TestClient, db: Session) -> None:
+    add_people(db)
+    assert api.get(f"{API_V1_PREFIX}/probe/me").headers["x-server-time"] == "2026-10-08T12:00:00Z"
     health = api.get(f"{API_V1_PREFIX}/health")
-    assert health.headers["x-server-time"] == health.json()["serverTime"] == "2026-10-08T12:00:00Z"
+    assert health.json()["serverTime"] == "2026-10-08T12:00:00Z"
+    assert "x-server-time" not in health.headers  # health acts as no learner, so it has no simulated now
     assert "x-server-time" not in api.get(f"{API_V1_PREFIX}/nowhere").headers
 
 

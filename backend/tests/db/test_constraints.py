@@ -8,7 +8,7 @@ import re
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -43,6 +43,7 @@ from app.domain.rules import LEGENDARY_PRICE_GEMS, MAX_STREAK_FREEZES
 from app.models import (
     ActivityDay,
     AppState,
+    AuthSession,
     Base,
     Course,
     Exercise,
@@ -53,6 +54,7 @@ from app.models import (
     GlossaryTerm,
     League,
     LeagueCohort,
+    LeagueMembership,
     Lesson,
     LessonSession,
     PathNode,
@@ -238,6 +240,41 @@ def gem_row(
 
 def count(db: Session, model: type[Base]) -> int:
     return db.execute(sa.select(sa.func.count()).select_from(model)).scalar_one()
+
+
+def auth_session(world: World, **columns: object) -> AuthSession:
+    """A 30-day sign-in session of the world's learner, with any column overridden."""
+    values: dict[str, object] = {
+        "user_id": world.learner.id,
+        "token_hash": "a" * 64,
+        "created_at": world.now,
+        "expires_at": world.now + timedelta(days=30),
+    }
+    return AuthSession(**(values | columns))
+
+
+def cohort(world: World, **columns: object) -> LeagueCohort:
+    """The world learner's Bronze cohort of the week of 2026-10-05, with any column overridden."""
+    values: dict[str, object] = {
+        "owner_user_id": world.learner.id,
+        "league_tier": 1,
+        "week_start": date(2026, 10, 5),
+        "created_at": world.now,
+    }
+    return LeagueCohort(**(values | columns))
+
+
+def other_learner(world: World, username: str = "sam", **columns: object) -> User:
+    """A second human learner, with any column overridden."""
+    values: dict[str, object] = {
+        "username": username,
+        "display_name": username.title(),
+        "avatar_color": "#58CC02",
+        "timezone": "UTC",
+        "current_course_id": world.course.id,
+        "joined_at": world.now,
+    }
+    return User(**(values | columns))
 
 
 # ---- connection and naming conventions ----
@@ -592,10 +629,35 @@ def test_a_frozen_day_records_no_goal(db: Session, world: World) -> None:
 
 
 def test_a_league_week_starts_on_a_monday(db: Session, world: World) -> None:
-    db.add(LeagueCohort(league_tier=1, week_start=date(2026, 10, 5), created_at=world.now))  # Monday
+    db.add(cohort(world))  # Monday
     db.flush()
-    db.add(LeagueCohort(league_tier=1, week_start=date(2026, 10, 6), created_at=world.now))  # Tuesday
+    db.add(cohort(world, week_start=date(2026, 10, 6)))  # Tuesday
     with check_fails("ck_league_cohorts_week_starts_monday"):
+        db.flush()
+
+
+def test_a_learner_has_one_cohort_per_tier_and_week(db: Session, world: World) -> None:
+    db.add(cohort(world))
+    db.flush()
+    db.add(cohort(world))
+    with unique_fails(
+        "league_cohorts.owner_user_id", "league_cohorts.league_tier", "league_cohorts.week_start"
+    ):
+        db.flush()
+
+
+def test_every_learner_has_cohorts_of_their_own(db: Session, world: World) -> None:
+    sam = other_learner(world)
+    db.add(sam)
+    db.flush()
+    db.add_all([cohort(world), cohort(world, owner_user_id=sam.id)])  # one tier and week, two owners
+    db.flush()
+    assert count(db, LeagueCohort) == 2
+
+
+def test_a_cohort_needs_an_owner(db: Session, world: World) -> None:
+    db.add(cohort(world, owner_user_id=None))
+    with pytest.raises(IntegrityError, match="NOT NULL constraint failed: league_cohorts.owner_user_id"):
         db.flush()
 
 
@@ -607,9 +669,82 @@ def test_app_state_is_a_single_row(db: Session, world: World) -> None:
         db.flush()
 
 
-def test_the_clock_offset_never_goes_negative(db: Session, world: World) -> None:
-    db.add(AppState(id=1, clock_offset_seconds=-1, seeded_at=world.now, seed_version="v1"))
-    with check_fails("ck_app_state_offset_forward_only"):
+# ---- users: credentials and the learner's own clock ----
+
+
+def test_a_learners_clock_offset_never_goes_negative(db: Session, world: World) -> None:
+    world.learner.clock_offset_seconds = -1
+    with check_fails("ck_users_offset_forward_only"):
+        db.flush()
+
+
+@pytest.mark.parametrize(
+    ("columns", "constraint"),
+    [
+        pytest.param({"email": "ana@example.com"}, "ck_users_credentials_pair", id="email-without-password"),
+        pytest.param(
+            {"password_hash": "scrypt$16384$8$1$c2FsdA==$aGFzaA=="},
+            "ck_users_credentials_pair",
+            id="password-without-email",
+        ),
+        pytest.param(
+            {"email": "Ana@Example.com", "password_hash": "scrypt$16384$8$1$c2FsdA==$aGFzaA=="},
+            "ck_users_email_lower",
+            id="email-not-lowercased",
+        ),
+    ],
+)
+def test_credentials_come_as_a_lowercased_pair(
+    db: Session, world: World, columns: dict[str, object], constraint: str
+) -> None:
+    db.add(other_learner(world, **columns))
+    with check_fails(constraint):
+        db.flush()
+
+
+def test_one_account_per_email(db: Session, world: World) -> None:
+    hashed = "scrypt$16384$8$1$c2FsdA==$aGFzaA=="
+    db.add(other_learner(world, "ana", email="ana@example.com", password_hash=hashed))
+    db.flush()
+    db.add(other_learner(world, "ana2", email="ana@example.com", password_hash=hashed))
+    with unique_fails("users.email"):
+        db.flush()
+
+
+def test_users_without_an_email_never_collide(db: Session, world: World) -> None:
+    db.add_all([other_learner(world, "sam"), other_learner(world, "kim")])  # like the demo learner and bots
+    db.flush()
+    assert db.scalar(sa.select(sa.func.count()).select_from(User).where(User.email.is_(None))) == 3
+
+
+# ---- auth_sessions ----
+
+
+@pytest.mark.parametrize(
+    ("columns", "constraint"),
+    [
+        pytest.param({"token_hash": "a" * 63}, "ck_auth_sessions_token_hash_sha256", id="short-hash"),
+        pytest.param(
+            {"expires_at": ANCHOR}, "ck_auth_sessions_expires_after_created", id="expires-before-created"
+        ),
+        pytest.param(
+            {"revoked_at": ANCHOR}, "ck_auth_sessions_revoked_after_created", id="revoked-before-created"
+        ),
+    ],
+)
+def test_auth_sessions_refuse_impossible_states(
+    db: Session, world: World, columns: dict[str, object], constraint: str
+) -> None:
+    db.add(auth_session(world, **columns))
+    with check_fails(constraint):
+        db.flush()
+
+
+def test_a_token_hash_belongs_to_one_session(db: Session, world: World) -> None:
+    db.add(auth_session(world))
+    db.flush()
+    db.add(auth_session(world))
+    with unique_fails("auth_sessions.token_hash"):
         db.flush()
 
 
@@ -687,6 +822,8 @@ def test_deleting_a_user_removes_everything_they_own(db: Session, world: World) 
                 goal_xp=20,
                 created_at=world.now,
             ),
+            auth_session(world),
+            cohort(world, memberships=[LeagueMembership(user_id=world.learner.id, joined_at=world.now)]),
         ]
     )
     db.commit()
@@ -694,7 +831,10 @@ def test_deleting_a_user_removes_everything_they_own(db: Session, world: World) 
     db.execute(sa.delete(User).where(User.id == world.learner.id))
     db.commit()
 
-    owned = (UserSettings, UserStats, LessonSession, SessionItem, XpEvent, GemTransaction, ActivityDay)
+    owned = (
+        UserSettings, UserStats, LessonSession, SessionItem, XpEvent, GemTransaction, ActivityDay,
+        AuthSession, LeagueCohort, LeagueMembership,
+    )  # fmt: skip
     assert {model.__tablename__: count(db, model) for model in owned} == {m.__tablename__: 0 for m in owned}
     assert count(db, Exercise) == 3  # content is a different aggregate: untouched
 

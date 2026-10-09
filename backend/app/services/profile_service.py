@@ -28,8 +28,9 @@ def profile(db: Session, ctx: RequestContext, user_ref: int | Literal["me"]) -> 
     """A learner's or a bot's profile: stats and every achievement in catalogue order.
 
     Bots have no lesson history, so their words, lessons and crowns are null; their totals come
-    from the same numbers as the leaderboard, so the two always agree. The statistics are measured
-    once and shared by the stats and the achievements.
+    from the same numbers as the viewer's leaderboard (the bot's weeks in the viewer's own cohorts),
+    so the two always agree. The statistics are measured once and shared by the stats and the
+    achievements.
     """
     user = ctx.user if user_ref == "me" else user_repo.get(db, user_ref)
     if user is None:
@@ -40,8 +41,8 @@ def profile(db: Session, ctx: RequestContext, user_ref: int | Literal["me"]) -> 
         metrics = achievement_service.metrics_for(db, user, ctx.now, path_now)
         stats = _learner_stats(db, user, metrics, path_now)
     else:
-        metrics = achievement_service.metrics_for(db, user, ctx.now)
-        stats = _bot_stats(db, bot, metrics)
+        metrics = achievement_service.metrics_for(db, user, ctx.now, viewer_id=ctx.user.id)
+        stats = _bot_stats(db, bot, metrics, viewer_id=ctx.user.id)
     return ProfileOut(
         user=ProfileUser(
             id=user.id,
@@ -104,7 +105,7 @@ def _learner_stats(db: Session, user: User, metrics: Metrics, path_now: PathSnap
         longest_streak=metrics[AchievementMetric.LONGEST_STREAK],
         total_xp=metrics[AchievementMetric.TOTAL_XP],
         league=league_service.brief(db, stats.league_tier) if leagues_open else None,
-        top_three_finishes=league_repo.count_finishes(db, user.id, best_rank=TOP_FINISH),
+        top_three_finishes=league_repo.count_finishes(db, user.id, owner_id=user.id, best_rank=TOP_FINISH),
         words_learned=metrics[AchievementMetric.WORDS_LEARNED],
         lessons_completed=play_repo.count_completed_lessons(db, user.id),
         crowns=sum(
@@ -115,16 +116,19 @@ def _learner_stats(db: Session, user: User, metrics: Metrics, path_now: PathSnap
     )
 
 
-def _bot_stats(db: Session, bot: BotProfile, metrics: Metrics) -> ProfileStats:
-    """A bot's stats: its fixed streak, its newest league, and its baseline plus league XP, which is
-    its achievements' own measurement (and comes from the same numbers as the leaderboard)."""
-    tier = league_repo.latest_cohort_tier(db, bot.user_id)
+def _bot_stats(db: Session, bot: BotProfile, metrics: Metrics, *, viewer_id: int) -> ProfileStats:
+    """A bot's stats as the viewer sees it: its fixed streak, its newest league in the viewer's
+    cohorts, and its baseline plus league XP, which is its achievements' own measurement (and comes
+    from the same numbers as the viewer's leaderboard)."""
+    tier = league_repo.latest_cohort_tier(db, bot.user_id, viewer_id)
     return ProfileStats(
         current_streak=bot.baseline_streak,
         longest_streak=bot.baseline_streak,
         total_xp=metrics[AchievementMetric.TOTAL_XP],
         league=None if tier is None else league_service.brief(db, tier),
-        top_three_finishes=league_repo.count_finishes(db, bot.user_id, best_rank=TOP_FINISH),
+        top_three_finishes=league_repo.count_finishes(
+            db, bot.user_id, owner_id=viewer_id, best_rank=TOP_FINISH
+        ),
         words_learned=None,
         lessons_completed=None,
         crowns=None,

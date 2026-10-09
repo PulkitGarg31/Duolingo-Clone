@@ -1,4 +1,5 @@
-"""Schema shape: the 30 tables, the ON DELETE policy and an index behind every foreign key.
+"""Schema shape: the 31 tables, the ON DELETE policy and an index behind every foreign key, and how
+startup builds the schema (rebuilding a database file made for another one).
 
 SQLite does not index foreign keys by itself. Without an index, every lookup of a parent's
 children (and every parent delete) scans the whole child table.
@@ -6,8 +7,15 @@ children (and every parent delete) scans the whole child table.
 
 import re
 from collections import defaultdict
+from collections.abc import Iterator
+from pathlib import Path
 
+import pytest
+import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
+
+from app.core.db import create_tables, make_engine, schema_fingerprint
+from app.models import Base
 
 TABLES = {
     # content
@@ -26,6 +34,7 @@ TABLES = {
     "user_settings",
     "user_stats",
     "bot_profiles",
+    "auth_sessions",
     # play
     "lesson_sessions",
     "session_items",
@@ -66,6 +75,7 @@ ON_DELETE = {
     ("user_stats", ("user_id",)): ("users", "CASCADE"),
     ("user_stats", ("league_tier",)): ("leagues", "RESTRICT"),
     ("bot_profiles", ("user_id",)): ("users", "CASCADE"),
+    ("auth_sessions", ("user_id",)): ("users", "CASCADE"),
     ("lesson_sessions", ("user_id",)): ("users", "CASCADE"),
     ("lesson_sessions", ("node_id",)): ("path_nodes", "RESTRICT"),
     ("lesson_sessions", ("lesson_id", "node_id")): ("lessons", "RESTRICT"),
@@ -81,6 +91,7 @@ ON_DELETE = {
     ("gem_transactions", ("purchase_id",)): ("purchases", "CASCADE"),
     ("gem_transactions", ("session_id",)): ("lesson_sessions", "CASCADE"),
     ("activity_days", ("user_id",)): ("users", "CASCADE"),
+    ("league_cohorts", ("owner_user_id",)): ("users", "CASCADE"),  # a learner's private cohorts
     ("league_memberships", ("cohort_id",)): ("league_cohorts", "CASCADE"),
     ("league_memberships", ("user_id",)): ("users", "CASCADE"),
     ("user_achievements", ("user_id",)): ("users", "CASCADE"),
@@ -101,6 +112,7 @@ INDEXES: dict[str, tuple[str, tuple[str, ...], bool, str | None]] = {
     "ix_glossary_terms_node_id": ("glossary_terms", ("node_id",), False, None),
     "ix_users_current_course_id": ("users", ("current_course_id",), False, None),
     "ix_user_stats_league_tier": ("user_stats", ("league_tier",), False, None),
+    "ix_auth_sessions_user_id": ("auth_sessions", ("user_id",), False, None),
     "ux_lesson_sessions_one_active": ("lesson_sessions", ("user_id",), True, "status = 'active'"),
     "ix_lesson_sessions_user_id_status_ended_at": (
         "lesson_sessions",
@@ -126,7 +138,13 @@ INDEXES: dict[str, tuple[str, tuple[str, ...], bool, str | None]] = {
     "ix_gem_transactions_user_id_created_at": ("gem_transactions", ("user_id", "created_at"), False, None),
     "ix_gem_transactions_node_id": ("gem_transactions", ("node_id",), False, None),
     "ix_gem_transactions_session_id": ("gem_transactions", ("session_id",), False, None),
-    "ix_league_cohorts_open": ("league_cohorts", ("week_start",), False, "finalized_at IS NULL"),
+    "ix_league_cohorts_league_tier": ("league_cohorts", ("league_tier",), False, None),
+    "ix_league_cohorts_open": (
+        "league_cohorts",
+        ("owner_user_id", "week_start"),
+        False,
+        "finalized_at IS NULL",
+    ),
     "ix_league_memberships_user_id": ("league_memberships", ("user_id",), False, None),
     "ix_user_achievements_achievement_tier_id": ("user_achievements", ("achievement_tier_id",), False, None),
     "ix_user_achievements_session_id": ("user_achievements", ("session_id",), False, None),
@@ -151,13 +169,14 @@ UNIQUE_KEYS: dict[str, set[tuple[str, ...]]] = {
     },
     "guidebook_phrases": {("unit_id", "position")},
     "glossary_terms": {("course_id", "language", "term")},
-    "users": {("username",)},
+    "users": {("username",), ("email",)},
+    "auth_sessions": {("token_hash",)},
     "session_items": {("session_id", "seq")},
     "xp_events": {("session_id", "reason")},
     "purchases": {("user_id", "idempotency_key")},
     "activity_days": {("user_id", "local_date")},
     "leagues": {("name",)},
-    "league_cohorts": {("league_tier", "week_start")},
+    "league_cohorts": {("owner_user_id", "league_tier", "week_start")},
     "league_memberships": {("cohort_id", "user_id"), ("cohort_id", "final_rank")},
     "achievements": {("code",), ("position",)},
     "achievement_tiers": {("achievement_id", "level"), ("achievement_id", "threshold")},
@@ -201,10 +220,10 @@ def indexed_column_lists(conn: Connection, table: str) -> list[tuple[str, ...]]:
     return lists
 
 
-def test_create_all_builds_exactly_the_30_tables(engine: Engine) -> None:
+def test_create_all_builds_exactly_the_31_tables(engine: Engine) -> None:
     with engine.connect() as conn:
         tables = set(conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type = 'table'").scalars())
-    assert len(TABLES) == 30
+    assert len(TABLES) == 31
     assert tables == TABLES
 
 
@@ -254,3 +273,72 @@ def test_natural_keys_are_unique_constraints_named_by_convention(engine: Engine)
                     misnamed.append(name)
     assert misnamed == []
     assert dict(keys) == UNIQUE_KEYS
+
+
+# ---- building the schema at startup ----
+
+
+@pytest.fixture
+def blank_engine(tmp_path: Path) -> Iterator[Engine]:
+    """An engine on a database file that doesn't exist yet."""
+    engine = make_engine(f"sqlite:///{(tmp_path / 'boot' / 'app.db').as_posix()}")
+    yield engine
+    engine.dispose()
+
+
+def table_names(engine: Engine) -> set[str]:
+    with engine.connect() as conn:
+        return set(conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type = 'table'").scalars())
+
+
+def column_names(engine: Engine, table: str) -> set[str]:
+    with engine.connect() as conn:
+        return {row.name for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+
+
+def test_a_fresh_file_gets_every_table_and_the_schema_fingerprint(blank_engine: Engine) -> None:
+    assert create_tables(blank_engine, Base.metadata) is False  # nothing was there to drop
+    assert table_names(blank_engine) == TABLES
+    with blank_engine.connect() as conn:
+        stored = conn.exec_driver_sql("PRAGMA user_version").scalar_one()
+    assert stored == schema_fingerprint(blank_engine, Base.metadata) > 0
+
+
+def test_a_database_of_the_current_schema_keeps_its_data(blank_engine: Engine) -> None:
+    create_tables(blank_engine, Base.metadata)
+    with blank_engine.begin() as conn:
+        conn.exec_driver_sql(
+            "INSERT INTO leagues (tier, name, color, promote_count, demote_count)"
+            " VALUES (1, 'Bronze', '#D4A880', 20, 0)"
+        )
+    assert create_tables(blank_engine, Base.metadata) is False  # the next boot
+    with blank_engine.connect() as conn:
+        assert conn.exec_driver_sql("SELECT name FROM leagues").scalars().all() == ["Bronze"]
+
+
+def test_a_database_built_for_another_schema_is_rebuilt_empty(blank_engine: Engine) -> None:
+    # What an older version left behind: a global clock offset, and users without credentials.
+    with blank_engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE app_state (id INTEGER PRIMARY KEY, clock_offset_seconds INTEGER NOT NULL,"
+            " seeded_at DATETIME NOT NULL, seed_version VARCHAR(64) NOT NULL)"
+        )
+        conn.exec_driver_sql("CREATE TABLE users (id INTEGER PRIMARY KEY, username VARCHAR(32) NOT NULL)")
+        conn.exec_driver_sql("INSERT INTO app_state VALUES (1, 3600, '2026-10-08 12:00:00', 'old')")
+        conn.exec_driver_sql("INSERT INTO users (username) VALUES ('alex')")
+
+    assert create_tables(blank_engine, Base.metadata) is True
+    assert table_names(blank_engine) == TABLES
+    assert {"email", "password_hash", "clock_offset_seconds"} <= column_names(blank_engine, "users")
+    assert "clock_offset_seconds" not in column_names(blank_engine, "app_state")
+    with blank_engine.connect() as conn:
+        assert conn.exec_driver_sql("SELECT count(*) FROM app_state").scalar_one() == 0  # seeded again next
+
+
+def test_the_fingerprint_follows_the_schema(blank_engine: Engine) -> None:
+    assert schema_fingerprint(blank_engine, Base.metadata) == schema_fingerprint(blank_engine, Base.metadata)
+    changed = sa.MetaData()
+    for table in Base.metadata.sorted_tables:
+        table.to_metadata(changed)
+    changed.tables["users"].append_column(sa.Column("nickname", sa.String(20)))
+    assert schema_fingerprint(blank_engine, changed) != schema_fingerprint(blank_engine, Base.metadata)

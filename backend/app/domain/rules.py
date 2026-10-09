@@ -94,6 +94,20 @@ BOT_TIER_PACE: Final[Mapping[int, float]] = MappingProxyType(
 BOT_WEEK_SPREAD: Final[tuple[float, float]] = (0.6, 1.4)  # weekly XP spread around the pace
 BOT_SESSION_XP: Final[tuple[int, ...]] = (10, 11, 12, 13, 14, 15, 15, 20)  # XP sizes of bot sessions
 
+# ---- accounts ----
+NEW_ACCOUNT_GEMS: Final = 500  # a new account's opening balance, booked as a `seed` gem ledger row
+# The colours a new account's avatar is drawn from: the ones the seeded learners and bots wear.
+AVATAR_COLORS: Final[tuple[str, ...]] = (
+    "#58CC02",
+    "#1CB0F6",
+    "#FF9600",
+    "#CE82FF",
+    "#FF86D0",
+    "#FF4B4B",
+    "#2B70C9",
+    "#00CD9C",
+)
+
 # ---- grading ----
 TYPO_MIN_WORD_LENGTH: Final = 4  # shorter words must be exact: el/la, un/una
 SPECIAL_CHARACTERS_ES: Final[tuple[str, ...]] = ("á", "é", "í", "ó", "ú", "ñ", "ü", "¿", "¡")

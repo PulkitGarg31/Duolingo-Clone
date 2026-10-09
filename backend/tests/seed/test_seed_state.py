@@ -332,19 +332,44 @@ class TestAchievements:
         assert [tier.unlocked_at for tier in wildfire.tiers[:3]] == [FROZEN_NOW, FROZEN_NOW, None]
         assert badges[4].description == "Advance to the Gold League"
 
-    def test_a_bot_profile_is_computed_and_never_dated(self, seeded_db: Session) -> None:
+    def test_a_bot_profile_is_computed_and_never_dated(self, seeded_db: Session, learner: User) -> None:
         bot = seeded_db.scalar(
             select(BotProfile).join(LeagueMembership, LeagueMembership.user_id == BotProfile.user_id)
         )
         assert bot is not None
-        metrics = achievement_service.metrics_for(seeded_db, bot.user, FROZEN_NOW)
+        metrics = achievement_service.metrics_for(seeded_db, bot.user, FROZEN_NOW, viewer_id=learner.id)
         assert metrics[Metric.LONGEST_STREAK] == bot.baseline_streak
-        assert metrics[Metric.TOTAL_XP] > bot.baseline_xp  # plus its league weeks
+        assert metrics[Metric.TOTAL_XP] > bot.baseline_xp  # plus its weeks in the learner's cohorts
         assert metrics[Metric.WORDS_LEARNED] == metrics[Metric.PERFECT_LESSONS] == 0
         badges = achievement_service.list_for_profile(seeded_db, bot.user_id, metrics, is_bot=True)
         assert len(badges) == 7
         assert all(tier.unlocked_at is None for badge in badges for tier in badge.tiers)
         assert achievement_service.evaluate(seeded_db, bot.user_id, FROZEN_NOW) == []
+
+    def test_a_bot_counts_only_the_weeks_of_the_viewers_cohorts(
+        self, seeded_db: Session, learner: User
+    ) -> None:
+        # Another learner has never met this bot: to them its total is its baseline alone.
+        bot = seeded_db.scalar(
+            select(BotProfile).join(LeagueMembership, LeagueMembership.user_id == BotProfile.user_id)
+        )
+        assert bot is not None
+        stranger = seeded_db.execute(
+            insert(User)
+            .values(
+                username="sam",
+                display_name="Sam",
+                avatar_color="#58CC02",
+                timezone="UTC",
+                current_course_id=learner.current_course_id,
+                joined_at=FROZEN_NOW,
+            )
+            .returning(User.id)
+        ).scalar_one()
+        theirs = achievement_service.metrics_for(seeded_db, bot.user, FROZEN_NOW, viewer_id=stranger)
+        assert (theirs[Metric.TOTAL_XP], theirs[Metric.HIGHEST_LEAGUE]) == (bot.baseline_xp, 0)
+        with pytest.raises(ValueError, match="whose cohorts"):
+            achievement_service.metrics_for(seeded_db, bot.user, FROZEN_NOW)
 
     def test_evaluating_again_reports_and_writes_nothing(self, seeded_db: Session, learner: User) -> None:
         assert achievement_service.evaluate(seeded_db, learner.id, FROZEN_NOW + timedelta(hours=1)) == []
@@ -407,6 +432,25 @@ class TestInvariants:
         seeded_db.expire_all()
         problems = check_invariants(seeded_db, FROZEN_NOW)
         assert any(problem.startswith(f"{invariant}:") for problem in problems), problems
+
+    def test_the_checker_reports_a_cohort_whose_human_is_not_its_owner(
+        self, seeded_db: Session, learner: User
+    ) -> None:
+        sam_id = seeded_db.execute(
+            insert(User)
+            .values(
+                username="sam",
+                display_name="Sam",
+                avatar_color="#58CC02",
+                timezone="UTC",
+                current_course_id=learner.current_course_id,
+                joined_at=FROZEN_NOW,
+            )
+            .returning(User.id)
+        ).scalar_one()
+        seeded_db.execute(update(LeagueCohort).values(owner_user_id=sam_id))
+        problems = check_invariants(seeded_db, FROZEN_NOW)
+        assert any(problem.startswith("I7:") and "human members" in problem for problem in problems), problems
 
     def test_gems_equal_the_ledger_sum_and_the_last_balance(self, seeded_db: Session, learner: User) -> None:
         balances = list(
@@ -558,7 +602,14 @@ class TestSeeding:
         )
         assert (counts["users"], counts["bot_profiles"]) == (36, 35)
         state = seeded_db.get(AppState, 1)
-        assert state is not None and (state.clock_offset_seconds, state.seeded_at) == (0, FROZEN_NOW)
+        assert state is not None and state.seeded_at == FROZEN_NOW
+        # Nobody can log in to a seeded user, and every clock starts on real time.
+        users = seeded_db.execute(select(User.email, User.password_hash, User.clock_offset_seconds)).all()
+        assert {tuple(row) for row in users} == {(None, None, 0)}
+
+    def test_every_seeded_cohort_belongs_to_the_learner(self, seeded_db: Session, learner: User) -> None:
+        owners = set(seeded_db.scalars(select(LeagueCohort.owner_user_id)))
+        assert owners == {learner.id}
 
     def test_choice_ids_and_positions_do_not_give_the_answer_away(self, seeded_db: Session) -> None:
         # The files list each exercise's correct choice first; numbering them in that order would
@@ -614,7 +665,7 @@ class TestReset:
     LATER = FROZEN_NOW + timedelta(days=5)  # Tuesday 2026-10-13: a new league week
 
     def test_rebuilds_the_demo_relative_to_real_now(self, seeded_db: Session, learner: User) -> None:
-        seeded_db.execute(update(AppState).values(clock_offset_seconds=86_400))
+        seeded_db.execute(update(User).where(User.id == learner.id).values(clock_offset_seconds=86_400))
         seeded_db.execute(update(UserStats).where(UserStats.user_id == learner.id).values(gems=5))
         reset_demo(seeded_db, self.LATER, api_settings("sqlite://"))
         seeded_db.commit()
@@ -629,7 +680,9 @@ class TestReset:
         )
         assert stats.hearts_regen_anchor_at == self.LATER - timedelta(hours=1)
         state = seeded_db.get(AppState, 1)
-        assert state is not None and (state.clock_offset_seconds, state.seeded_at) == (0, self.LATER)
+        assert state is not None and state.seeded_at == self.LATER
+        user = seeded_db.get(User, learner.id)
+        assert user is not None and user.clock_offset_seconds == 0  # back on real time
         assert ledger_repo.total_xp(seeded_db, learner.id) == 373
         assert len(sessions_of(seeded_db, learner.id)) == 23
         weeks = set(seeded_db.scalars(select(LeagueCohort.week_start)))
@@ -661,7 +714,7 @@ class TestReset:
             2026, 9, 13, 19, 0, tzinfo=UTC
         )  # noon in Los Angeles, 30 days earlier
 
-    def test_gives_every_other_human_fresh_stats(self, seeded_db: Session, learner: User) -> None:
+    def test_leaves_every_other_learner_as_they_are(self, seeded_db: Session, learner: User) -> None:
         sam_id = seeded_db.execute(
             insert(User)
             .values(
@@ -680,9 +733,15 @@ class TestReset:
             .where(UserStats.user_id == sam_id)
             .values(hearts=2, hearts_regen_anchor_at=FROZEN_NOW, gems=0)
         )
+        seeded_db.execute(update(User).where(User.id == sam_id).values(clock_offset_seconds=3600))
         reset_demo(seeded_db, self.LATER, api_settings("sqlite://"))
         seeded_db.commit()
+        seeded_db.expire_all()
         stats = seeded_db.get(UserStats, sam_id)
-        assert stats is not None and (stats.hearts, stats.hearts_regen_anchor_at, stats.gems) == (5, None, 0)
-        assert seeded_db.get(UserSettings, sam_id) is not None
-        assert play_repo.count_completed_sessions(seeded_db, sam_id) == 0
+        assert stats is not None and (stats.hearts, stats.hearts_regen_anchor_at, stats.gems) == (
+            2,
+            FROZEN_NOW,
+            0,
+        )
+        sam = seeded_db.get(User, sam_id)
+        assert sam is not None and sam.clock_offset_seconds == 3600  # their clock is their own
