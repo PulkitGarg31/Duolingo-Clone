@@ -1,7 +1,6 @@
 import { LeagueBadge } from "@/components/icons/LeagueBadge";
 import { Owl } from "@/components/mascot/Owl";
 import { ButtonLink, ProgressBar } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import { unlockMessage, unlockProgress } from "./leagueCopy";
 
 /** Before the tenth finished lesson: a locked shield with the owl peeking out, and how far there is to go. */
@@ -21,8 +20,7 @@ export function LockedLeaderboard({ lessonsToUnlock }: { lessonsToUnlock: number
         height={18}
         label={`${done} / ${total}`}
         aria-label="Lessons completed"
-        // Dark ink suits the gold fill; over the empty dark-mode track the label turns light.
-        className={cn("mt-6 max-w-[330px]", done * 2 < total && "dark:[--c-quest-fg:var(--c-fg-2)]")}
+        className="mt-6 max-w-[330px]"
       />
       <ButtonLink href="/learn" variant="secondary" className="mt-8 w-64">
         Start a lesson

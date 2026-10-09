@@ -2,7 +2,6 @@ import { CheckIcon } from "@/components/icons/CheckIcon";
 import { ProgressBar } from "@/components/ui";
 import { QuestGlyph } from "@/features/rail/QuestGlyph";
 import type { QuestOut } from "@/lib/api/types";
-import { cn } from "@/lib/cn";
 import { QuestChest } from "./QuestChest";
 
 /**
@@ -19,8 +18,7 @@ export function QuestRow({ quest }: { quest: QuestOut }) {
           {title}
           {completed && <CheckIcon size={18} title="Complete" className="shrink-0 text-correct-fg" />}
         </h3>
-        {/* The "12 / 20" label is dark ink for the gold fill; over the empty dark-mode track it turns light. */}
-        <div className={cn("relative mt-2 mr-5", progress * 2 < target && "dark:[--c-quest-fg:var(--c-fg-2)]")}>
+        <div className="relative mt-2 mr-5">
           <ProgressBar value={progress / target} tone="quest" height={18} label={`${progress} / ${target}`} aria-label={title} />
           <span className="absolute top-1/2 -right-5 -translate-y-1/2">
             <QuestChest open={completed} size={40} />
