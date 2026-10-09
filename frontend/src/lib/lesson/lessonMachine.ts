@@ -239,9 +239,13 @@ function answered(state: LessonState, result: AnswerResultOut): LessonState {
     session,
     answers: recordAnswer(state, result),
     wrongStreak: nextWrongStreak(state.wrongStreak, result),
+    timeUp: false,
   };
-  // Timed practice: the clock ran out while this answer was in flight, so the run ends now.
-  if (state.timeUp) return { ...next, draft: null, phase: completing() };
+  // Timed practice: the clock ran out while this answer was in flight, so the run ends, unless the answer was
+  // right and reached the server in time: then it moved the deadline later and the clock runs on.
+  if (state.timeUp && (result.session.canComplete || !deadlineMoved(state.session, result))) {
+    return { ...next, draft: null, phase: completing() };
+  }
   // CAN'T LISTEN NOW skips the item silently: no feedback bar.
   if (result.result === "cant_listen") return { ...next, draft: null, phase: nextPlayPhase(session) };
   return { ...next, phase: { name: "feedback", result } };
@@ -277,6 +281,13 @@ function applyResult(session: SessionOut, result: AnswerResultOut): SessionOut {
     lives: session.lives && after.livesLeft !== null ? { ...session.lives, left: after.livesLeft } : session.lives,
     timer: session.timer && after.expiresAt ? { ...session.timer, expiresAt: after.expiresAt } : session.timer,
   };
+}
+
+/** Timed practice: the answer pushed the deadline past the one the clock was counting down to. */
+function deadlineMoved(session: SessionOut, result: AnswerResultOut): boolean {
+  const before = session.timer?.expiresAt;
+  const after = result.session.expiresAt;
+  return before !== undefined && after !== null && Date.parse(after) > Date.parse(before);
 }
 
 /** Wrong answers and skips extend the streak, a correct one ends it; CAN'T LISTEN NOW is neutral. */
@@ -315,8 +326,13 @@ function reviewPrompt(exercise: ExerciseOut): string {
   }
 }
 
+/** The session ended elsewhere, or no longer exists at all (the demo data was reset). */
+function isSessionGone(error: ApiError): boolean {
+  return error.code === "SESSION_NOT_ACTIVE" || error.code === "NOT_FOUND";
+}
+
 function answerFailed(state: LessonState, error: ApiError): LessonState {
-  if (error.code === "SESSION_NOT_ACTIVE") return { ...state, phase: sessionEnded() };
+  if (isSessionGone(error)) return { ...state, phase: sessionEnded() };
   // Timed practice: late answers complete the run, as does any failure once the clock has run out.
   if (state.timeUp || error.code === "SESSION_EXPIRED") return { ...state, draft: null, phase: completing() };
   if (error.code === "OUT_OF_HEARTS") return outOfHearts(state, error);
@@ -373,7 +389,7 @@ function nextPlayPhase(session: SessionOut): Phase {
 
 function completeFailed(state: LessonState, error: ApiError): LessonState {
   if (error.code === "OUT_OF_HEARTS") return outOfHearts(state, error);
-  if (error.code === "SESSION_NOT_ACTIVE" || error.code === "NOT_FOUND") return { ...state, phase: sessionEnded() };
+  if (isSessionGone(error)) return { ...state, phase: sessionEnded() };
   // Completing is idempotent on the server, so RETRY simply asks again.
   return { ...state, phase: { name: "error", error } };
 }

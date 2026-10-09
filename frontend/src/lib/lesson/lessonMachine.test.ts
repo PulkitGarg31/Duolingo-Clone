@@ -417,6 +417,11 @@ describe("checking", () => {
     expect(state.phase).toEqual({ name: "exiting", href: "/learn", notice: SESSION_ENDED_NOTICE });
   });
 
+  it("leaves for the path when the session no longer exists (the demo was reset)", () => {
+    const state = run(checking(), { type: "ANSWER_FAILED", error: apiError("NOT_FOUND", 404) });
+    expect(state.phase).toEqual({ name: "exiting", href: "/learn", notice: SESSION_ENDED_NOTICE });
+  });
+
   it.each([
     ["an unreachable server", networkError()],
     ["a server error", apiError("INTERNAL_ERROR", 500)],
@@ -555,10 +560,32 @@ describe("timed practice", () => {
     const waiting = run(checking(sessionOfKind("timed")), { type: "TIME_UP" });
     expect(waiting.phase.name).toBe("checking");
     expect(waiting.timeUp).toBe(true);
-    const answered = run(waiting, { type: "ANSWER_OK", result: graded(101, "correct", { combo: 1 }) });
+    // A wrong answer leaves the deadline where it was: the server graded it just before the deadline (so it could
+    // not complete yet), but the deadline has passed by now and the run ends.
+    const late = graded(101, "incorrect", { state: { canComplete: false, expiresAt: "2026-10-08T12:00:35Z" } });
+    const answered = run(waiting, { type: "ANSWER_OK", result: late });
     expect(answered.phase).toEqual({ name: "completing" });
-    expect(answered.session.items[0].result).toBe("correct");
+    expect(answered.session.items[0].result).toBe("incorrect");
     expect(run(waiting, { type: "ANSWER_FAILED", error: networkError() }).phase).toEqual({ name: "completing" });
+  });
+
+  it("completes after the answer in flight when nothing is left to answer, even with time added", () => {
+    const waiting = run(checking(sessionOfKind("timed")), { type: "TIME_UP" });
+    const last = graded(101, "correct", { state: { canComplete: true, currentItemId: null, expiresAt: "2026-10-08T12:00:40Z" } });
+    expect(run(waiting, { type: "ANSWER_OK", result: last }).phase).toEqual({ name: "completing" });
+  });
+
+  it("plays on when the answer in flight reached the server in time and moved the deadline", () => {
+    const waiting = run(checking(sessionOfKind("timed")), { type: "TIME_UP" });
+    const inTime = graded(101, "correct", { combo: 1, state: { canComplete: false, expiresAt: "2026-10-08T12:00:40Z" } });
+    const answered = run(waiting, { type: "ANSWER_OK", result: inTime });
+    expect(answered.phase).toEqual({ name: "feedback", result: inTime });
+    expect(answered.timeUp).toBe(false);
+    expect(answered.session.timer?.expiresAt).toBe("2026-10-08T12:00:40Z");
+    const next = run(answered, { type: "CONTINUE" });
+    expect(next.phase).toEqual({ name: "answering" });
+    // The clock runs out again later, and this time the run ends.
+    expect(run(next, { type: "TIME_UP" }).phase).toEqual({ name: "completing" });
   });
 
   it("ignores TIME_UP outside timed practice", () => {
@@ -683,6 +710,16 @@ describe("resynchronising with the server", () => {
     expect(shownItem(state)?.id).toBe(103);
     expect(state.coachShown).toEqual(["combo5"]);
     expect(state.reviewable).toBe(false);
+  });
+
+  it("goes back to the exercises when completing finds the server's timed clock still running", () => {
+    const completing = run(start(sessionOfKind("timed")), { type: "TIME_UP" });
+    expect(completing.phase).toEqual({ name: "completing" });
+    const fresh = sessionOfKind("timed", { currentItemId: 102, canComplete: false });
+    const state = run(completing, { type: "SYNCED", session: fresh });
+    expect(state.phase).toEqual({ name: "answering" });
+    expect(state.timeUp).toBe(false);
+    expect(shownItem(state)?.id).toBe(102);
   });
 });
 

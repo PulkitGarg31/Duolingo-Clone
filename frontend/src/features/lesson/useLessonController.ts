@@ -8,6 +8,7 @@ import { newIdempotencyKey } from "@/lib/idempotency";
 import type { AnswerDraft } from "@/lib/lesson/answerDraft";
 import { buildCelebrations } from "@/lib/lesson/celebrations";
 import {
+  SESSION_ENDED_NOTICE,
   currentItem,
   initLessonState,
   lessonReducer,
@@ -83,11 +84,8 @@ export function useLessonController({ session, me, api, navigate }: LessonContro
 
   // ------------------------------------------------------------------------------------ server requests
 
-  function resync() {
-    api.reload(sessionId).then(
-      (fresh) => dispatch({ type: "SYNCED", session: fresh }),
-      () => undefined,
-    );
+  function resync(onFailure: () => void = () => undefined) {
+    api.reload(sessionId).then((fresh) => dispatch({ type: "SYNCED", session: fresh }), onFailure);
   }
 
   function submit(payload: AnswerIn) {
@@ -115,7 +113,14 @@ export function useLessonController({ session, me, api, navigate }: LessonContro
         playSound("lessonComplete");
         dispatch({ type: "COMPLETE_OK", completion, steps: buildCelebrations(completion) });
       },
-      (error: unknown) => dispatch({ type: "COMPLETE_FAILED", error: asApiError(error) }),
+      (error: unknown) => {
+        const failure = asApiError(error);
+        const failed = () => dispatch({ type: "COMPLETE_FAILED", error: failure });
+        // The server still has something to answer (its timed clock is a moment behind ours, say): carry on
+        // from its copy of the session rather than calling it an error.
+        if (failure.code === "SESSION_INCOMPLETE") resync(failed);
+        else failed();
+      },
     );
   }
 
@@ -214,8 +219,16 @@ export function useLessonController({ session, me, api, navigate }: LessonContro
         if (notice) toast({ message: notice });
         navigate("/learn");
       },
-      // An unreachable server is already announced app-wide; the learner can press the button again.
-      () => setFlag("quitting", false),
+      (error: unknown) => {
+        // A session that no longer exists (the demo was reset) has nothing left to quit.
+        if (asApiError(error).code === "NOT_FOUND") {
+          toast({ message: SESSION_ENDED_NOTICE });
+          navigate("/learn");
+          return;
+        }
+        // An unreachable server is already announced app-wide; the learner can press the button again.
+        setFlag("quitting", false);
+      },
     );
   }
 
